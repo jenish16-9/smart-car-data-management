@@ -17,6 +17,8 @@ FOLDER_TO_EVENT_TYPE = {
     "road_traffic": "normal",
 }
 
+_GLASS_NAME_PATTERN = re.compile(r"glass|shatter|broken|breakage|breaking|\bcrack|chandlier", re.IGNORECASE)
+
 
 @dataclass(frozen=True)
 class DatasetRecord:
@@ -43,6 +45,16 @@ def source_group(path: Path) -> str:
     return re.sub(r"[^a-z0-9]+", "_", stem).strip("_")
 
 
+def event_type_for_path(path: Path) -> str | None:
+    """Map folders to app labels and undo the source project's crash/glass merge."""
+    event_type = FOLDER_TO_EVENT_TYPE.get(path.parent.name)
+    if event_type == "crash" and path.parent.name == "collision_sounds" and _GLASS_NAME_PATTERN.search(path.stem):
+        return "glass_breaking"
+    if event_type == "crash" and re.search(r"-[AB]-39(?:_|$)", path.stem, re.IGNORECASE):
+        return "glass_breaking"
+    return event_type
+
+
 def discover_dataset(root: Path) -> tuple[list[DatasetRecord], Counter[str]]:
     records: list[DatasetRecord] = []
     excluded: Counter[str] = Counter()
@@ -52,7 +64,7 @@ def discover_dataset(root: Path) -> tuple[list[DatasetRecord], Counter[str]]:
             continue
         for path in split_root.rglob("*.wav"):
             folder = path.parent.name
-            event_type = FOLDER_TO_EVENT_TYPE.get(folder)
+            event_type = event_type_for_path(path)
             if event_type is None:
                 excluded[folder] += 1
                 continue
@@ -73,6 +85,22 @@ def split_leakage(records: list[DatasetRecord]) -> dict[str, set[str]]:
     for record in records:
         groups[record.source_group].add(record.original_split)
     return {group: splits for group, splits in groups.items() if len(splits) > 1}
+
+
+def cross_label_source_conflicts(records: list[DatasetRecord]) -> dict[str, set[str]]:
+    labels: dict[str, set[str]] = defaultdict(set)
+    for record in records:
+        labels[record.source_group.split(":", 1)[1]].add(record.event_type)
+    return {
+        group: event_types
+        for group, event_types in labels.items()
+        if len(event_types) > 1 and not re.fullmatch(r"\d+(?:_[a-z0-9]+)+", group)
+    }
+
+
+def without_cross_label_conflicts(records: list[DatasetRecord]) -> tuple[list[DatasetRecord], dict[str, set[str]]]:
+    conflicts = cross_label_source_conflicts(records)
+    return [record for record in records if record.source_group.split(":", 1)[1] not in conflicts], conflicts
 
 
 def group_aware_split(records: list[DatasetRecord]) -> dict[str, list[DatasetRecord]]:

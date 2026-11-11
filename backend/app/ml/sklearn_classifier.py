@@ -26,6 +26,9 @@ class SklearnAudioClassifier:
         if audio.audio_bytes is not None:
             return audio.audio_bytes
         if audio.source_uri is not None:
+            local_path = Path(audio.source_uri)
+            if local_path.is_file():
+                return local_path
             parsed = urlparse(audio.source_uri)
             if parsed.scheme == "file":
                 return Path(unquote(parsed.path.lstrip("/")))

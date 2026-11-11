@@ -14,7 +14,13 @@ from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 
 from app.ml.audio_features import FeatureConfig, features_from_wav
-from app.ml.dataset import DatasetRecord, class_counts, discover_dataset, group_aware_split
+from app.ml.dataset import (
+    DatasetRecord,
+    class_counts,
+    discover_dataset,
+    group_aware_split,
+    without_cross_label_conflicts,
+)
 from app.services.audio_classifier import ALERT_EVENT_TYPES
 
 
@@ -82,6 +88,10 @@ def main() -> int:
             "Fetch the LFS objects from the dataset's original Git repository first."
         )
 
+    records, label_conflicts = without_cross_label_conflicts(records)
+    if label_conflicts:
+        print(f"Excluded {len(label_conflicts)} source groups that still carry conflicting labels")
+
     splits = group_aware_split(records)
     splits = {
         name: _limit_augmentations(items, max(1, args.max_augmentations_per_source)) for name, items in splits.items()
@@ -121,6 +131,7 @@ def main() -> int:
         "best_c": best_c,
         "created_at": timestamp.isoformat(),
         "dataset_counts": {name: class_counts(items) for name, items in splits.items()},
+        "excluded_cross_label_source_groups": len(label_conflicts),
         "test_metrics": test_metrics,
     }
     args.output.parent.mkdir(parents=True, exist_ok=True)

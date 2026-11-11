@@ -13,13 +13,12 @@ creates the artifact and a JSON evaluation report in the ignored `backend/ml_art
 
 ## Dataset audit (November 11, 2026)
 
-The supplied `dataset/` directory currently contains Git LFS pointer text rather than WAV bytes.
-The audit found 8,553 mapped pointers and zero materialized mapped WAV files, so real training
-cannot run until the dataset's original LFS objects are fetched. The copied folder is not itself a
-Git repository and has no remote, so `git lfs pull` cannot work inside it. Re-clone the original
-dataset repository with Git LFS enabled, or ask its owner to provide the materialized audio files.
+The professor-provided ZIP contained Git LFS pointer text rather than WAV bytes. The original public
+repository was identified as `saimsheikh123/Smart-Car-Alert-Model`; a fresh Git LFS clone
+materialized all 9,877 tracked WAV files. Of those, 8,553 map to documented application labels,
+1,307 are in the ambiguous `alert_sounds` folder, and 17 are quarantined by the source project.
 
-The supplied split also has 460 source groups crossing train/validation/test boundaries because
+The supplied split has 460 source groups crossing train/validation/test boundaries because
 augmented derivatives of the same recording appear in multiple splits. Evaluating those splits
 directly would leak source audio into the test set and overstate accuracy. The trainer ignores the
 supplied split assignment and deterministically reassigns complete source groups 70/15/15 within
@@ -29,7 +28,8 @@ Mapped labels:
 
 | Dataset folder | Application event type |
 | --- | --- |
-| `collision_sounds`, `car_crash` | `crash` |
+| `car_crash`; non-glass files in `collision_sounds` | `crash` |
+| Explicit glass/shatter/break sources in `collision_sounds` | `glass_breaking` |
 | `emergency_sirens` | `emergency_vehicle_siren` |
 | `glass_breaking` and its backup folder | `glass_breaking` |
 | `human_scream` | `screaming` |
@@ -40,6 +40,36 @@ assigned to one of the required categories. The dataset has no explicitly labele
 `tire_skidding`, or `abnormal_engine_noise` samples. The resulting baseline therefore cannot claim
 to recognize those three categories; the training report lists them as unsupported.
 
+The source project's `collision_sounds` class merged vehicle impacts with glass audio: more than
+1,000 filenames in that folder explicitly identify glass, shattering, or breaking. For this
+application, clearly named glass sources and ESC-50 class-39 sources are restored to
+`glass_breaking`. Four remaining descriptive source groups carrying contradictory labels are
+excluded. Coincidentally identical numeric filenames from unrelated source datasets are not treated
+as conflicts.
+
+## Baseline result
+
+The first cleaned, group-safe run trained on 4,259 examples, selected regularization using 910
+validation examples, and evaluated once on 865 held-out examples:
+
+| Metric | Result |
+| --- | ---: |
+| Accuracy | 86.82% |
+| Balanced accuracy | 84.84% |
+| Macro-F1 | 0.844 |
+
+| Class | Precision | Recall | F1 | Test examples |
+| --- | ---: | ---: | ---: | ---: |
+| Crash | 0.639 | 0.802 | 0.711 | 86 |
+| Emergency vehicle siren | 0.841 | 0.775 | 0.807 | 191 |
+| Glass breaking | 0.897 | 0.766 | 0.827 | 137 |
+| Normal/background | 0.907 | 0.996 | 0.949 | 235 |
+| Screaming | 0.947 | 0.903 | 0.924 | 216 |
+
+These metrics describe only those five categories and this dataset. They are not production or
+real-car accuracy claims. The ignored local report `backend/ml_artifacts/audio-baseline.metrics.json`
+contains the full confusion matrix and per-class report.
+
 ## Setup and audit
 
 ```powershell
@@ -48,8 +78,8 @@ cd backend
 .\.venv\Scripts\python.exe -m scripts.audit_audio_dataset ..\..\dataset --json
 ```
 
-After replacing the pointers with real WAV files, the audit should report a nonzero
-`materialized_wav_count` and `git_lfs_pointer_count: 0`.
+The LFS clone should report a nonzero `materialized_wav_count` and
+`git_lfs_pointer_count: 0`.
 
 ## Train and evaluate
 

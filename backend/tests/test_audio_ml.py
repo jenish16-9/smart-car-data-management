@@ -19,7 +19,14 @@ from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 
 from app.ml.audio_features import FeatureConfig, decode_wav, features_from_wav
-from app.ml.dataset import DatasetRecord, discover_dataset, group_aware_split, split_leakage
+from app.ml.dataset import (
+    DatasetRecord,
+    cross_label_source_conflicts,
+    discover_dataset,
+    event_type_for_path,
+    group_aware_split,
+    split_leakage,
+)
 from app.ml.sklearn_classifier import SklearnAudioClassifier
 from app.services.audio_classifier import AudioClassificationInput, AudioClassifier
 from scripts.train_audio_model import main as train_main
@@ -65,6 +72,21 @@ def test_dataset_audit_detects_lfs_and_split_leakage():
         records, excluded = discover_dataset(root)
         assert not excluded and all(record.is_lfs_pointer for record in records)
         assert len(split_leakage(records)) == 1
+
+
+def test_collision_folder_recovers_explicit_glass_labels():
+    base = Path("collision_sounds")
+    assert event_type_for_path(base / "vehicle-impact-01.wav") == "crash"
+    assert event_type_for_path(base / "glass-shatter-01.wav") == "glass_breaking"
+    assert event_type_for_path(base / "esc50_glass_breaking_2-112213-A-39.wav") == "glass_breaking"
+
+
+def test_cross_label_source_conflicts_are_visible():
+    records = [
+        DatasetRecord(Path("a.wav"), "crash", "train", "crash:same", False),
+        DatasetRecord(Path("b.wav"), "screaming", "test", "screaming:same", False),
+    ]
+    assert cross_label_source_conflicts(records) == {"same": {"crash", "screaming"}}
 
 
 def test_group_aware_split_never_separates_augmentations():
@@ -114,6 +136,9 @@ def test_trained_classifier_loads_artifact_and_classifies_wav():
         result = classifier.classify(AudioClassificationInput(audio_bytes=_wav_bytes(2200)))
         assert result.event_type == "screaming"
         assert 0 <= result.confidence <= 1
+        wav_path = Path(temporary) / "sample.wav"
+        wav_path.write_bytes(_wav_bytes(2200))
+        assert classifier.classify(AudioClassificationInput(source_uri=str(wav_path))).event_type == "screaming"
 
 
 def test_training_command_creates_evaluated_artifact():
@@ -123,7 +148,7 @@ def test_training_command_creates_evaluated_artifact():
             class_root = root / "dataset" / "train" / folder
             class_root.mkdir(parents=True)
             for index in range(10):
-                (class_root / f"source-{index}.wav").write_bytes(_wav_bytes(base_frequency + index))
+                (class_root / f"{folder}-source-{index}.wav").write_bytes(_wav_bytes(base_frequency + index))
         artifact = root / "model.joblib"
         previous_argv = sys.argv
         sys.argv = [
