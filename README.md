@@ -1,56 +1,217 @@
 # Smart Car Data Management
 
-Full-stack starter for the Smart Car Data Management dashboard.
+Monitors smart vehicles: cabin audio, engine noise, glass-break sounds, GPS location,
+telemetry, device status, alerts and analytics.
 
-## Structure
+- **Frontend** – static HTML / CSS / vanilla JS dashboard (`frontend/`).
+- **Backend** – FastAPI + SQLAlchemy 2 (async) + Motor, JWT auth (`backend/`).
+- **Databases** – PostgreSQL for relational data, MongoDB for high-volume data.
+
+## System architecture
 
 ```text
-smart-car-data-management-fullstack/
-├── frontend/              # Current dashboard UI
-│   ├── index.html
-│   ├── styles.css
-│   ├── app.js
-│   └── api.js              # Fetch wrapper for the backend
-├── backend/               # FastAPI service layer
-│   ├── app/
-│   │   ├── api/routes/    # HTTP endpoints
-│   │   ├── core/          # Settings and security
-│   │   ├── models/        # Database models
-│   │   ├── schemas/       # Request/response contracts
-│   │   ├── services/      # Business logic
-│   │   └── main.py
-│   ├── requirements.txt
-│   └── .env.example
-└── README.md
+ Browser (frontend/)  ──HTTP/JSON + JWT──▶  FastAPI (backend/app)
+                                              │  routes → services → repositories
+                          ┌───────────────────┴───────────────────┐
+                          ▼                                       ▼
+                  PostgreSQL (SQLAlchemy)                 MongoDB (Motor)
+        users, vehicles, assignments, sessions,     telemetry_events, sensor_events,
+        audio metadata, alerts, alert_actions,      audio_analysis_results, device_logs
+        device_status
+
+ Audio files themselves live in object storage (S3 / MinIO). Only the URL + metadata is stored.
 ```
 
-## Run the frontend
+Layering: **routes** (HTTP only) → **services** (business rules, access control, workflow) →
+**repositories** (queries). Details and diagrams: [docs/database-design.md](docs/database-design.md).
 
-From `frontend/`, start any static server. For example:
+## Folder structure
 
-```bash
-python3 -m http.server 5173
+```text
+├── frontend/
+│   ├── index.html  styles.css  app.js  api.js      # UI + API client (falls back to sample data)
+├── backend/
+│   ├── .env.example  requirements.txt  alembic.ini  pytest.ini  pyproject.toml
+│   ├── alembic/                       # migrations (versions/0001_initial_schema.py)
+│   ├── tests/                         # pytest suite (isolated, in-memory databases)
+│   └── app/
+│       ├── main.py
+│       ├── api/routes/    auth users vehicles audio alerts telemetry analytics
+│       ├── core/          config security dependencies errors
+│       ├── db/            postgres mongodb init_db
+│       ├── models/        user vehicle audio alert device_status   (PostgreSQL)
+│       ├── schemas/       Pydantic request/response models
+│       ├── repositories/  user vehicle audio alert (PG), telemetry analysis (MongoDB)
+│       └── services/      auth vehicle audio alert telemetry analytics audio_classifier
+└── docs/database-design.md
 ```
 
-Open `http://localhost:5173`.
+## PostgreSQL responsibilities
 
-## Run the backend
+Relational, transactional data: `users`, `user_sessions` (revocable login sessions), `vehicles`,
+`vehicle_assignments`, `audio_records` (metadata + storage URL), `alerts`, `alert_actions`
+(audit trail) and `device_status` (latest health snapshot per vehicle).
+
+## MongoDB responsibilities
+
+High-volume / flexible data: `telemetry_events` (GPS + vehicle readings), `sensor_events`,
+`audio_analysis_results` (ML output) and `device_logs`. Vehicles are referenced by their
+`vehicle_code` (e.g. `CAR-1024`).
+
+## Environment setup
 
 ```bash
 cd backend
-python3 -m venv .venv
-source .venv/bin/activate
+python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
+cp .env.example .env        # then edit the values
+```
+
+| Variable | Purpose |
+| --- | --- |
+| `APP_NAME`, `API_PREFIX`, `ENVIRONMENT` | App metadata; `ENVIRONMENT=development` enables the dev login seed |
+| `FRONTEND_ORIGIN` | Allowed CORS origin(s), comma-separated (default `http://localhost:5173`) |
+| `POSTGRES_URL` | `postgresql+asyncpg://user:password@host:5432/smart_car` |
+| `MONGODB_URL`, `MONGODB_DATABASE` | MongoDB connection |
+| `JWT_SECRET`, `JWT_ALGORITHM`, `ACCESS_TOKEN_EXPIRE_MINUTES` | Token signing. `JWT_SECRET` is **required** unless `ENVIRONMENT=development` |
+| `DEV_ADMIN_EMAIL`, `DEV_ADMIN_PASSWORD` | Development administrator, created at startup (development only) |
+
+`.env` is git-ignored. Use a strong random `JWT_SECRET` anywhere real.
+
+## PostgreSQL setup
+
+Not installed? On macOS: `brew install postgresql@16 && brew services start postgresql@16`
+(Linux: `sudo apt install postgresql`; or run the `postgres` Docker image). Then:
+
+```bash
+createdb smart_car          # or: psql -c 'CREATE DATABASE smart_car;'
+```
+
+Set `POSTGRES_URL` in `.env` to match your user and password.
+
+## MongoDB setup
+
+macOS: `brew tap mongodb/brew && brew install mongodb-community && brew services start mongodb-community`
+(Linux: follow the MongoDB install guide; or run the `mongo` Docker image). The database and
+collections are created on first write, and indexes at API startup (`python -m app.db.init_db`
+does it on demand).
+
+## Alembic migrations
+
+```bash
+cd backend
+alembic upgrade head                                  # create / update PostgreSQL tables
+alembic revision --autogenerate -m "describe change"  # after changing models
+alembic downgrade -1                                  # roll back one revision
+```
+
+The database URL comes from `POSTGRES_URL`.
+
+## Start the backend
+
+```bash
+cd backend && source .venv/bin/activate
+alembic upgrade head
 uvicorn app.main:app --reload --port 8000
 ```
 
-The API documentation is available at `http://localhost:8000/docs`.
+Interactive API docs: <http://localhost:8000/docs>. Health check: `GET /health`.
 
-The current frontend is intentionally kept as a simple static UI so it can be
-run immediately. The backend uses in-memory sample data for now; replace the
-repository/service functions with PostgreSQL and authentication when you begin
-the production implementation.
+## Start the frontend
 
-The backend test login is `admin@example.com` with password `admin123`.
+```bash
+cd frontend
+python3 -m http.server 5173
+```
 
+Open <http://localhost:5173>. The frontend calls `http://localhost:8000/api/v1` (override with
+`window.API_BASE_URL` before `app.js` loads). **Signing in always requires a registered account and a reachable backend.** If the backend becomes unreachable after sign-in, the UI keeps
+working on built-in sample data and shows a notice at the top of the page.
 
+## Demo data (10 vehicles)
+
+```bash
+cd backend && source .venv/bin/activate
+python -m app.db.seed_demo        # development only; safe to re-run
+```
+
+Creates CAR-1024 … CAR-1033 with different types, statuses (connected / disconnected / maintenance),
+GPS positions, uptime, battery, engine/microphone states, MongoDB telemetry and alerts (only where
+it makes sense, e.g. CAR-1026 and CAR-1028 have none). Existing vehicles are never overwritten.
+It also creates a non-admin `driver@example.com` assigned to CAR-1024 … CAR-1029 to demonstrate
+access control; its random password is printed once when it is created.
+
+## Development login
+
+```text
+email:    admin@example.com
+password: admin123
+```
+
+Created at startup from `DEV_ADMIN_EMAIL` / `DEV_ADMIN_PASSWORD` in `.env` when
+`ENVIRONMENT=development` (copy `.env.example`). Never use these in a real deployment.
+Self-registration always creates a regular `user`.
+
+## API endpoints
+
+All under `/api/v1` and protected by a `Bearer` JWT unless marked public.
+
+| Area | Endpoints |
+| --- | --- |
+| Auth | `POST /auth/register` (public), `POST /auth/login` (public), `POST /auth/logout`, `GET /auth/me` |
+| Users | `GET /users/me`, `PATCH /users/me` |
+| Vehicles | `POST /vehicles`, `GET /vehicles`, `GET /vehicles/{id}`, `PATCH /vehicles/{id}`, `DELETE /vehicles/{id}`, `PATCH /vehicles/{id}/controls` (monitoring mode, audio capture, recording), `GET /vehicles/{id}/logs` (device activity) |
+| Audio | `POST /audio`, `GET /audio`, `GET /audio/{id}`, `PATCH /audio/{id}/status` |
+| Alerts | `POST /alerts`, `GET /alerts`, `GET /alerts/{id}`, `POST /alerts/{id}/acknowledge`, `POST /alerts/{id}/resolve` |
+| Telemetry | `POST /telemetry/{vehicle}`, `GET /telemetry/{vehicle}`, `GET /telemetry/{vehicle}/latest` |
+| Analytics | `GET /analytics/summary`, `GET /analytics/events-over-time`, `GET /analytics/events-by-type` |
+| System | `GET /health` (no prefix, public) |
+
+Notes: `{id}` / `{vehicle}` accept a UUID or a vehicle code such as `CAR-1024`. Missing or
+invalid tokens return `401`. Non-admin users only see vehicles they own or are assigned to
+(others return `404`); acknowledging/resolving alerts is **administrator-only** (`403` otherwise).
+
+## Audio → alert workflow
+
+1. `POST /audio` creates the audio metadata (PostgreSQL `audio_records`).
+2. The object-storage URL (`s3://…` / `https://…`) is saved with it. Clients upload the file to
+   S3/MinIO themselves; no audio bytes are stored in either database.
+3. `services/audio_classifier.classify_audio` processes the file.
+4. The result is saved in MongoDB `audio_analysis_results`.
+5. If `confidence >= 0.80` **and** the class is not `normal`, a PostgreSQL alert is created.
+6. The alert shows up in the dashboard (active alerts, recent events, Alert Details page).
+7. An administrator acknowledges or resolves it.
+8. Every alert action (`created`, `acknowledged`, `resolved`) is stored in `alert_actions`.
+
+If classification fails, the audio record is kept with `processing_status = failed`.
+
+## Run the tests
+
+```bash
+cd backend && source .venv/bin/activate
+pytest -q
+ruff check . && ruff format --check .      # lint / formatting
+```
+
+Tests use an in-memory SQLite database and an in-memory MongoDB mock injected through
+FastAPI dependency overrides, so they never connect to (or delete) a real database.
+
+## Future ML model integration
+
+`backend/app/services/audio_classifier.py` currently contains a **mock classifier**. It does
+not analyse audio: it returns a deterministic placeholder label from a hash of the path, so the
+pipeline can be built and tested. **It is not a trained model and must not be used for real
+detection.** To integrate a real model (PyTorch, TensorFlow, YAMNet, …), keep the interface
+`classify_audio(audio_path) -> AudioClassificationResult`, download/stream the file from the
+storage URL, run inference, and update `MODEL_NAME` / `MODEL_VERSION`. The rest of the system is
+unchanged. For heavy models, move step 3 of the workflow to a background worker/queue.
+
+## Known limitations
+
+- Device controls (monitoring mode, audio capture, recording) are saved to PostgreSQL and logged
+  to MongoDB, but there is no real device agent yet, so they do not command physical hardware.
+  Uptime is real: it counts from the moment a vehicle's first telemetry arrives (`device_status.online_since`)
+  and resets when the vehicle is set to a non-connected status.
+- The Event Type filter on the Analytics page filters the table and donut client-side only.
+- Audio is classified synchronously inside `POST /audio`.
+- "Forgot password?" shows a message only; there is no password-reset flow yet.
