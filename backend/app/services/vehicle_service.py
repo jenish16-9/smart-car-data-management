@@ -3,16 +3,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import ConflictError, ForbiddenError, NotFoundError
 from app.models.common import utcnow
+from app.models.device import Device
 from app.models.user import User
 from app.models.vehicle import Vehicle
 from app.repositories import telemetry_repository, user_repository, vehicle_repository
+from app.schemas.device import DeviceControlsUpdate
 from app.schemas.vehicle import DeviceLogOut, VehicleControlsUpdate, VehicleCreate, VehicleUpdate
+from app.services.device_rules import default_device, require_controllable
 
 
 async def get_accessible(session: AsyncSession, user: User, ref: str) -> Vehicle:
     """Return the vehicle, or 404 if it does not exist or the user may not see it."""
     vehicle = await vehicle_repository.get_by_ref(session, ref)
-    if vehicle is None or not await vehicle_repository.user_can_access(session, user, vehicle):
+    if vehicle is None or not vehicle.is_active or not await vehicle_repository.user_can_access(session, user, vehicle):
         raise NotFoundError("Vehicle not found")
     return vehicle
 
@@ -27,7 +30,7 @@ async def create_vehicle(session: AsyncSession, user: User, payload: VehicleCrea
     if not is_admin and (payload.owner_id not in (None, user.id) or payload.assigned_user_ids):
         raise ForbiddenError("Only administrators can set another owner or assign users")
     if await vehicle_repository.get_by_ref(session, payload.vehicle_code):
-        raise ConflictError(f"Vehicle {payload.vehicle_code} already exists")
+        raise ConflictError(f"Vehicle {payload.vehicle_code} already exists (it may be deactivated)")
 
     owner_id = payload.owner_id or user.id
     if owner_id != user.id:
@@ -48,8 +51,14 @@ async def create_vehicle(session: AsyncSession, user: User, payload: VehicleCrea
     return await get_accessible(session, user, str(vehicle.id))
 
 
-async def list_vehicles(session: AsyncSession, user: User, *, limit: int, offset: int) -> list[Vehicle]:
-    return await vehicle_repository.list_for_user(session, user, limit=limit, offset=offset)
+async def list_vehicles(
+    session: AsyncSession, user: User, *, limit: int, offset: int, include_inactive: bool = False
+) -> list[Vehicle]:
+    if include_inactive and user.role != "admin":
+        raise ForbiddenError("Only administrators can list deactivated vehicles")
+    return await vehicle_repository.list_for_user(
+        session, user, limit=limit, offset=offset, include_inactive=include_inactive
+    )
 
 
 async def _require_manage(user: User, vehicle: Vehicle) -> None:
@@ -66,24 +75,26 @@ async def update_vehicle(session: AsyncSession, user: User, ref: str, payload: V
             raise ForbiddenError("Only administrators can change the vehicle owner")
         if fields["owner_id"] is not None:
             await _require_user(session, fields["owner_id"])
-    if fields.get("status", vehicle.status) != "connected" and vehicle.device_status:
-        vehicle.device_status.online_since = None  # uptime only counts while connected
+    if fields.get("status", vehicle.status) != "connected":
+        for target in (vehicle.device_status, *vehicle.devices):
+            if target is not None:
+                target.online_since = None  # uptime only counts while connected
     await vehicle_repository.update(session, vehicle, **fields)
     await session.commit()
     return await get_accessible(session, user, str(vehicle.id))
 
 
-async def delete_vehicle(session: AsyncSession, user: User, ref: str) -> None:
+async def deactivate_vehicle(session: AsyncSession, user: User, ref: str) -> None:
     vehicle = await get_accessible(session, user, ref)
     await _require_manage(user, vehicle)
-    await vehicle_repository.delete(session, vehicle)
+    await vehicle_repository.deactivate(session, vehicle, at=utcnow())  # soft delete: nothing is removed
     await session.commit()
 
 
 _MODE_LABELS = {"continuous": "Continuous", "motion_triggered": "Motion Triggered", "paused": "Paused"}
 
 
-def _control_changes(device, payload: VehicleControlsUpdate) -> list[tuple[str, str, str]]:
+def control_changes(device, payload: VehicleControlsUpdate | DeviceControlsUpdate) -> list[tuple[str, str, str]]:
     """Apply the requested control values to `device`; return (field, event_type, message) per change."""
     changes: list[tuple[str, str, str]] = []
     requested = payload.model_dump(exclude_none=True)
@@ -126,11 +137,22 @@ async def update_controls(
     session: AsyncSession, mongo: AsyncIOMotorDatabase, user: User, ref: str, payload: VehicleControlsUpdate
 ) -> Vehicle:
     vehicle = await get_accessible(session, user, ref)
-    changes = _control_changes(vehicle.device_status, payload)
+    # Controls belong to a device; vehicle-level calls act on the vehicle's default device
+    # (or on the legacy device_status row for vehicles that have no registered device).
+    target = default_device(vehicle) or vehicle.device_status
+    if isinstance(target, Device):
+        require_controllable(target)
+    changes = control_changes(target, payload)
     await session.commit()
     for _field, event_type, message in changes:
         await telemetry_repository.insert_device_log(
-            mongo, vehicle_code=vehicle.vehicle_code, event_type=event_type, message=message, timestamp=utcnow()
+            mongo,
+            vehicle_code=vehicle.vehicle_code,
+            event_type=event_type,
+            message=message,
+            timestamp=utcnow(),
+            device_id=str(target.id) if isinstance(target, Device) else None,
+            hardware_id=target.hardware_id if isinstance(target, Device) else None,
         )
     return await get_accessible(session, user, str(vehicle.id))
 

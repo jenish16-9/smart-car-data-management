@@ -6,7 +6,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api.routes import alerts, analytics, audio, auth, telemetry, users, vehicles
+from app.api.routes import alerts, analytics, audio, auth, devices, telemetry, users, vehicles
 from app.core.config import settings
 from app.core.errors import ServiceError
 from app.db.init_db import init_db
@@ -44,7 +44,7 @@ async def service_error_handler(_: Request, exc: ServiceError) -> JSONResponse:
     return JSONResponse({"detail": exc.detail}, status_code=exc.status_code, headers=headers)
 
 
-for module in (auth, users, vehicles, audio, alerts, telemetry, analytics):
+for module in (auth, users, vehicles, devices, audio, alerts, telemetry, analytics):
     app.include_router(module.router, prefix=settings.api_prefix)
 
 

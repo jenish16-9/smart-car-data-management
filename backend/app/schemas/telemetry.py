@@ -1,5 +1,6 @@
 from datetime import datetime
 from typing import Any
+from uuid import UUID
 
 from pydantic import BaseModel, Field
 
@@ -16,6 +17,7 @@ class TelemetryCreate(BaseModel):
     engine_temperature: float | None = Field(default=None, ge=-60, le=400, description="Celsius")
     battery_level: int | None = Field(default=None, ge=0, le=100)
     gps_status: str | None = Field(default=None, max_length=20)
+    device_id: UUID | None = Field(default=None, description="Optional: the IoT device that produced this reading.")
 
 
 class TelemetryOut(BaseModel):
@@ -26,6 +28,8 @@ class TelemetryOut(BaseModel):
     engine_temperature: float | None = None
     battery_level: int | None = None
     gps_status: str | None = None
+    device_id: str | None = None
+    hardware_id: str | None = None
 
     @classmethod
     def from_document(cls, doc: dict[str, Any]) -> "TelemetryOut":

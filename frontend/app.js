@@ -2,7 +2,7 @@ import { api, tokenStore } from './api.js';
 
 const app = document.querySelector('#app');
 
-const state = { page: location.hash.replace('#/', '') || 'dashboard', user: null, userName: 'Admin', vehicle: 'CAR-1024', alertId: null, mapVehicle: 'All Vehicles', filters: { vehicle: 'All Vehicles', type: 'All Types', range: '' }, loading: false, notice: '' };
+const state = { page: location.hash.replace('#/', '') || 'dashboard', user: null, userName: 'Admin', vehicle: 'CAR-1024', deviceId: null, alertId: null, mapVehicle: 'All Vehicles', filters: { vehicle: 'All Vehicles', type: 'All Types', range: '' }, loading: false, notice: '' };
 
 const icons = { dashboard: '▦', map: '⌖', alerts: '♧', car: '▱', analytics: '▥', user: '●', audio: '▥', clock: '◷', check: '✓', bell: '♧' };
 
@@ -102,6 +102,15 @@ let data = sampleData();
 const NO_VEHICLE = { code: '—', type: '—', connected: false, microphone: 'Offline', engine: 'Unknown', gps: 'No Signal', lastSeen: 'Never', sync: 'Never', uptime: '—', registered: '—', mapStatus: 'Unknown', mode: 'continuous', capture: false, recording: false };
 const currentVehicle = () => data.vehicles.find((v) => v.code === state.vehicle) || data.vehicles[0] || NO_VEHICLE;
 const connectedPill = (v) => (v.status === 'maintenance' ? '<span class="status-pill amber">Maintenance</span>' : `<span class="status-pill ${v.connected ? 'green' : 'red'}">${v.connected ? 'Connected' : 'Disconnected'}</span>`);
+// Devices: a vehicle can have several; controls act on the selected (non-retired) device.
+const DEVICE_TONE = { ACTIVE: 'green', WARNING: 'amber', DELAYED: 'amber', PENDING: 'blue', DISABLED: 'red', RETIRED: 'red' };
+const devicePill = (status) => `<span class="status-pill ${DEVICE_TONE[status] || 'blue'}">${esc(cap(String(status).toLowerCase()))}</span>`;
+const currentDevice = (v = currentVehicle()) => {
+  const usable = (v.devices || []).filter((d) => d.status !== 'RETIRED');
+  return usable.find((d) => d.id === state.deviceId) || usable.find((d) => d.id === v.defaultDeviceId) || usable[0] || null;
+};
+const controlsOf = (v) => { const d = currentDevice(v); return d ? { mode: d.monitoring_mode, capture: d.audio_capture_enabled, recording: d.recording } : { mode: v.mode, capture: v.capture, recording: v.recording }; };
+const deviceLabel = (d) => `${d.device_name || cap(d.device_type)} · ${d.hardware_id}`;
 const statePill = (value) => `<span class="status-pill ${toneOf(value)}">${esc(value)}</span>`;
 
 // ----- Mapping backend responses to the view model -----
@@ -112,7 +121,7 @@ function toVehicle(v, latest) {
   const mapStatus = v.status === 'maintenance' ? 'In Maintenance' : !connected ? 'Offline' : moving ? 'In Transit' : 'Parked';
   const uptime = connected && d.online_since ? duration(d.online_since) : v.status === 'maintenance' ? 'In maintenance' : connected ? '—' : 'Offline';
   const state_ = v.status;
-  return { code: v.vehicle_code, type: v.vehicle_type, connected, status: state_, microphone: cap(d.microphone_status || 'offline'), engine: cap(d.engine_status || 'unknown'), gps: cap(d.gps_status || 'no_signal'), lastSeen: ago(v.last_seen_at || d.last_sync_at), sync: ago(d.last_sync_at), uptime, mapStatus, mode: d.monitoring_mode || 'continuous', capture: d.audio_capture_enabled !== false, recording: Boolean(d.recording), latest: latest || null };
+  return { code: v.vehicle_code, type: v.vehicle_type, connected, status: state_, microphone: cap(d.microphone_status || 'offline'), engine: cap(d.engine_status || 'unknown'), gps: cap(d.gps_status || 'no_signal'), lastSeen: ago(v.last_seen_at || d.last_sync_at), sync: ago(d.last_sync_at), uptime, mapStatus, mode: d.monitoring_mode || 'continuous', capture: d.audio_capture_enabled !== false, recording: Boolean(d.recording), latest: latest || null, devices: v.devices || [], defaultDeviceId: v.default_device_id || null };
 }
 
 function placeMarkers(vehicles) {
@@ -259,8 +268,15 @@ function alertPage() {
 
 function carPage() {
   const v = currentVehicle();
+  const d = currentDevice(v);
+  const c = controlsOf(v);
+  const selector = v.devices.some((x) => x.status !== 'RETIRED') ? `<div class="control-item"><span class="control-label">▣ Device</span><select class="select-control" style="width:230px" id="deviceSelect">${v.devices.filter((x) => x.status !== 'RETIRED').map((x) => `<option value="${esc(x.id)}" ${d && x.id === d.id ? 'selected' : ''}>${esc(deviceLabel(x))}</option>`).join('')}</select>${d ? devicePill(d.status) : ''}</div>` : '';
+  const deviceRow = (x) => `<tr><td>${esc(x.device_name || '—')}</td><td>${esc(cap(x.device_type))}</td><td>${esc(x.hardware_id)}</td><td>${devicePill(x.status)}</td><td>${x.last_seen_at ? esc(ago(x.last_seen_at)) : 'Never'}</td></tr>`;
+  const active = v.devices.filter((x) => x.status !== 'RETIRED');
+  const retired = v.devices.filter((x) => x.status === 'RETIRED');
+  const devicePanel = v.devices.length ? `<div class="panel activity"><h2 class="section-title">Devices (${active.length})</h2><div class="table-wrap"><table><thead><tr><th>Name</th><th>Type</th><th>Hardware ID</th><th>Status</th><th>Last Heartbeat</th></tr></thead><tbody>${active.map(deviceRow).join('') || emptyRow(5, 'No active devices')}</tbody></table></div>${retired.length ? `<h2 class="section-title" style="margin-top:18px">Retired devices</h2><div class="table-wrap"><table><tbody>${retired.map(deviceRow).join('')}</tbody></table></div>` : ''}</div>` : '';
   const rows = data.activity.length ? data.activity.map((r) => `<tr><td>${esc(r[0])}</td><td>${esc(r[1])}</td><td>${esc(r[2])}</td><td><span class="status-pill green">Success</span></td></tr>`).join('') : emptyRow(4, 'No device activity recorded yet');
-  return shell(`<h1 class="page-title">Car Monitoring &amp; Control</h1><div class="grid two-col"><div class="panel car-panel"><div class="car-header"><div><h2>${esc(v.code)} ${connectedPill(v)}</h2><div class="car-subtitle">▱ &nbsp; ${esc(v.type)}</div></div></div><div class="car-meta"><span>◷ &nbsp; Last Seen: ${esc(v.lastSeen)}</span><span>|</span><span>◷ &nbsp; Uptime: ${esc(v.uptime)}</span></div><div class="vehicle-overview"><div class="vehicle-overview-title"><span class="vehicle-badge">${svgIcon('car')}</span><span>Vehicle Overview</span></div><div class="vehicle-status-grid"><div class="vehicle-status-card"><small>Engine</small><strong>${statePill(v.engine)}</strong></div><div class="vehicle-status-card"><small>Cabin Audio</small><strong>${statePill(v.microphone)}</strong></div><div class="vehicle-status-card"><small>GPS Location</small><strong>${statePill(v.gps)}</strong></div><div class="vehicle-status-card"><small>Latest Sync</small><strong>${esc(v.sync)}</strong></div></div></div></div><div class="panel"><h2 class="section-title">Device Controls</h2><div class="control-list"><div class="control-item"><span class="control-label">♩ Microphone ${statePill(v.microphone)}</span></div><div class="control-item"><span class="control-label">▥ Audio Capture</span><button class="toggle ${v.capture ? 'on' : ''}" id="captureToggle" aria-pressed="${v.capture}" aria-label="Toggle audio capture"></button><span>${v.capture ? 'Enabled' : 'Disabled'}</span></div><div class="control-item"><span class="control-label">⚙ Monitoring Mode</span><select class="select-control" style="width:150px" id="modeSelect">${[['continuous', 'Continuous'], ['motion_triggered', 'Motion Triggered'], ['paused', 'Paused']].map(([value, label]) => `<option value="${value}" ${v.mode === value ? 'selected' : ''}>${label}</option>`).join('')}</select></div><button class="primary-btn" id="recordBtn">◉ ${v.recording ? 'Stop Recording' : 'Start Recording'}</button><button class="secondary-btn" id="pauseBtn">Ⅱ ${v.mode === 'paused' ? 'Resume Monitoring' : 'Pause Monitoring'}</button><button class="secondary-btn" id="refreshBtn">⟳ Refresh Status</button></div></div></div><div class="panel activity"><h2 class="section-title">Recent Device Activity</h2><div class="table-wrap"><table><thead><tr><th>Time</th><th>Event</th><th>Details</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table></div></div>`);
+  return shell(`<h1 class="page-title">Car Monitoring &amp; Control</h1><div class="grid two-col"><div class="panel car-panel"><div class="car-header"><div><h2>${esc(v.code)} ${connectedPill(v)}</h2><div class="car-subtitle">▱ &nbsp; ${esc(v.type)}</div></div></div><div class="car-meta"><span>◷ &nbsp; Last Seen: ${esc(v.lastSeen)}</span><span>|</span><span>◷ &nbsp; Uptime: ${esc(v.uptime)}</span></div><div class="vehicle-overview"><div class="vehicle-overview-title"><span class="vehicle-badge">${svgIcon('car')}</span><span>Vehicle Overview</span></div><div class="vehicle-status-grid"><div class="vehicle-status-card"><small>Engine</small><strong>${statePill(v.engine)}</strong></div><div class="vehicle-status-card"><small>Cabin Audio</small><strong>${statePill(v.microphone)}</strong></div><div class="vehicle-status-card"><small>GPS Location</small><strong>${statePill(v.gps)}</strong></div><div class="vehicle-status-card"><small>Latest Sync</small><strong>${esc(v.sync)}</strong></div></div></div></div><div class="panel"><h2 class="section-title">Device Controls</h2><div class="control-list">${selector}<div class="control-item"><span class="control-label">♩ Microphone ${statePill(v.microphone)}</span></div><div class="control-item"><span class="control-label">▥ Audio Capture</span><button class="toggle ${c.capture ? 'on' : ''}" id="captureToggle" aria-pressed="${c.capture}" aria-label="Toggle audio capture"></button><span>${c.capture ? 'Enabled' : 'Disabled'}</span></div><div class="control-item"><span class="control-label">⚙ Monitoring Mode</span><select class="select-control" style="width:150px" id="modeSelect">${[['continuous', 'Continuous'], ['motion_triggered', 'Motion Triggered'], ['paused', 'Paused']].map(([value, label]) => `<option value="${value}" ${c.mode === value ? 'selected' : ''}>${label}</option>`).join('')}</select></div><button class="primary-btn" id="recordBtn">◉ ${c.recording ? 'Stop Recording' : 'Start Recording'}</button><button class="secondary-btn" id="pauseBtn">Ⅱ ${c.mode === 'paused' ? 'Resume Monitoring' : 'Pause Monitoring'}</button><button class="secondary-btn" id="refreshBtn">⟳ Refresh Status</button></div></div></div>${devicePanel}<div class="panel activity"><h2 class="section-title">Recent Device Activity</h2><div class="table-wrap"><table><thead><tr><th>Time</th><th>Event</th><th>Details</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table></div></div>`);
 }
 
 function analytics() {
@@ -365,7 +381,9 @@ async function setControls(patch) {
     return render();
   }
   try {
-    await api.updateControls(v.code, patch);
+    const device = currentDevice(v);
+    if (device) await api.updateDeviceControls(device.id, patch);
+    else await api.updateControls(v.code, patch);
     await reload();
   } catch (err) {
     if (err.status === 401) return endSession('Your session has expired. Please sign in again.');
@@ -415,9 +433,10 @@ function bind() {
   document.querySelector('#switchAuth')?.addEventListener('click', () => { const register = !document.querySelector('#fullName'); app.innerHTML = login(register); bind(); });
   document.querySelector('#ackBtn')?.addEventListener('click', () => alertAction('acknowledge'));
   document.querySelector('#resolveBtn')?.addEventListener('click', () => alertAction('resolve'));
-  document.querySelector('#recordBtn')?.addEventListener('click', () => setControls({ recording: !currentVehicle().recording }));
-  document.querySelector('#pauseBtn')?.addEventListener('click', () => setControls({ monitoring_mode: currentVehicle().mode === 'paused' ? 'continuous' : 'paused' }));
-  document.querySelector('#captureToggle')?.addEventListener('click', () => setControls({ audio_capture_enabled: !currentVehicle().capture }));
+  document.querySelector('#recordBtn')?.addEventListener('click', () => setControls({ recording: !controlsOf(currentVehicle()).recording }));
+  document.querySelector('#pauseBtn')?.addEventListener('click', () => setControls({ monitoring_mode: controlsOf(currentVehicle()).mode === 'paused' ? 'continuous' : 'paused' }));
+  document.querySelector('#captureToggle')?.addEventListener('click', () => setControls({ audio_capture_enabled: !controlsOf(currentVehicle()).capture }));
+  document.querySelector('#deviceSelect')?.addEventListener('change', (e) => { state.deviceId = e.target.value; render(); });
   document.querySelector('#modeSelect')?.addEventListener('change', (e) => setControls({ monitoring_mode: e.target.value }));
   document.querySelector('#audioBtn')?.addEventListener('click', viewAudio);
   document.querySelector('#alertPick')?.addEventListener('change', (e) => { state.alertId = e.target.value; reload(); });

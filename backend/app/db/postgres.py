@@ -2,8 +2,10 @@
 
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
+from typing import Any
 
 from sqlalchemy import DateTime
+from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy.types import TypeDecorator
@@ -34,6 +36,15 @@ class UTCDateTime(TypeDecorator[datetime]):
         return value
 
 
+def engine_options(url: str | None = None) -> dict[str, Any]:
+    """Engine kwargs. Poolers (PgBouncer, e.g. Neon ``-pooler`` hosts) can't reuse prepared statements."""
+    host = make_url(url or settings.postgres_url).host or ""
+    options: dict[str, Any] = {"pool_pre_ping": True}
+    if "-pooler" in host or "pooler.supabase" in host:
+        options["connect_args"] = {"statement_cache_size": 0}
+    return options
+
+
 _engine: AsyncEngine | None = None
 _sessionmaker: async_sessionmaker[AsyncSession] | None = None
 
@@ -41,7 +52,7 @@ _sessionmaker: async_sessionmaker[AsyncSession] | None = None
 def get_engine() -> AsyncEngine:
     global _engine
     if _engine is None:
-        _engine = create_async_engine(settings.postgres_url, pool_pre_ping=True)
+        _engine = create_async_engine(settings.postgres_url, **engine_options())
     return _engine
 
 

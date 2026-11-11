@@ -50,11 +50,24 @@ async def insert_sensor_events(db: AsyncIOMotorDatabase, documents: list[dict[st
 
 
 async def insert_device_log(
-    db: AsyncIOMotorDatabase, *, vehicle_code: str, event_type: str, message: str, timestamp: datetime
+    db: AsyncIOMotorDatabase,
+    *,
+    vehicle_code: str,
+    event_type: str,
+    message: str,
+    timestamp: datetime,
+    device_id: str | None = None,
+    hardware_id: str | None = None,
 ) -> None:
-    await db[DEVICE_LOGS].insert_one(
-        {"vehicle_id": vehicle_code, "event_type": event_type, "message": message, "timestamp": timestamp}
-    )
+    document: dict[str, Any] = {
+        "vehicle_id": vehicle_code,
+        "event_type": event_type,
+        "message": message,
+        "timestamp": timestamp,
+    }
+    if device_id:
+        document.update(device_id=device_id, hardware_id=hardware_id)
+    await db[DEVICE_LOGS].insert_one(document)
 
 
 async def list_device_logs(db: AsyncIOMotorDatabase, vehicle_code: str, limit: int) -> list[dict[str, Any]]:

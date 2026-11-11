@@ -1,11 +1,9 @@
+from datetime import datetime
 from uuid import UUID
 
 from sqlalchemy import ColumnElement, func, or_, select
-from sqlalchemy import delete as sql_delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.alert import Alert, AlertAction
-from app.models.audio import AudioRecord
 from app.models.device_status import DeviceStatus
 from app.models.user import User
 from app.models.vehicle import Vehicle, VehicleAssignment
@@ -18,7 +16,7 @@ def _parse_uuid(value: str) -> UUID | None:
         return None
 
 
-def _accessible(user: User) -> ColumnElement[bool]:
+def accessible_condition(user: User) -> ColumnElement[bool]:
     assigned = select(VehicleAssignment.vehicle_id).where(VehicleAssignment.user_id == user.id)
     return or_(Vehicle.owner_id == user.id, Vehicle.id.in_(assigned))
 
@@ -31,18 +29,23 @@ async def get_by_ref(session: AsyncSession, ref: str) -> Vehicle | None:
     return result.scalar_one_or_none()
 
 
-async def list_for_user(session: AsyncSession, user: User, *, limit: int, offset: int) -> list[Vehicle]:
+async def list_for_user(
+    session: AsyncSession, user: User, *, limit: int, offset: int, include_inactive: bool = False
+) -> list[Vehicle]:
     query = select(Vehicle).order_by(Vehicle.vehicle_code).limit(limit).offset(offset)
+    if not include_inactive:
+        query = query.where(Vehicle.is_active.is_(True))
     if user.role != "admin":
-        query = query.where(_accessible(user))
+        query = query.where(accessible_condition(user))
     return list((await session.execute(query)).scalars().all())
 
 
-async def accessible_scope(session: AsyncSession, user: User) -> list[Vehicle] | None:
-    """None means unrestricted (administrator); otherwise the vehicles the user may see."""
-    if user.role == "admin":
-        return None
-    return list((await session.execute(select(Vehicle).where(_accessible(user)))).scalars().all())
+async def accessible_scope(session: AsyncSession, user: User) -> list[Vehicle]:
+    """The active vehicles the user may see (all active vehicles for an administrator)."""
+    query = select(Vehicle).where(Vehicle.is_active.is_(True))
+    if user.role != "admin":
+        query = query.where(accessible_condition(user))
+    return list((await session.execute(query)).scalars().all())
 
 
 async def user_can_access(session: AsyncSession, user: User, vehicle: Vehicle) -> bool:
@@ -83,14 +86,12 @@ async def update(session: AsyncSession, vehicle: Vehicle, **fields: object) -> V
     return vehicle
 
 
-async def delete(session: AsyncSession, vehicle: Vehicle) -> None:
-    """Delete a vehicle and its relational children (explicit, so it also works on SQLite)."""
-    alert_ids = select(Alert.id).where(Alert.vehicle_id == vehicle.id)
-    await session.execute(sql_delete(AlertAction).where(AlertAction.alert_id.in_(alert_ids)))
-    for model in (Alert, AudioRecord, DeviceStatus, VehicleAssignment):
-        await session.execute(sql_delete(model).where(model.vehicle_id == vehicle.id))
-    await session.execute(sql_delete(Vehicle).where(Vehicle.id == vehicle.id))
+async def deactivate(session: AsyncSession, vehicle: Vehicle, *, at: datetime) -> Vehicle:
+    """Soft delete: hide the vehicle but keep every related record (devices, heartbeats, alerts, audio)."""
+    vehicle.is_active = False
+    vehicle.deleted_at = at
     await session.flush()
+    return vehicle
 
 
 async def count(session: AsyncSession, vehicle_ids: list[UUID] | None) -> int:

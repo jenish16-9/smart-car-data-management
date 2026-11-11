@@ -84,6 +84,10 @@ export const api = {
   vehicles: () => apiRequest('/vehicles'),
   vehicle: (id) => apiRequest(`/vehicles/${encodeURIComponent(id)}`),
   updateControls: (id, controls) => apiRequest(`/vehicles/${encodeURIComponent(id)}/controls`, { method: 'PATCH', body: JSON.stringify(controls) }),
+  devices: (params) => apiRequest(`/devices${queryString(params)}`),
+  device: (id) => apiRequest(`/devices/${encodeURIComponent(id)}`),
+  deviceHeartbeats: (id, params) => apiRequest(`/devices/${encodeURIComponent(id)}/heartbeats${queryString(params)}`),
+  updateDeviceControls: (id, controls) => apiRequest(`/devices/${encodeURIComponent(id)}/status`, { method: 'PATCH', body: JSON.stringify(controls) }),
   deviceLogs: (id, params) => apiRequest(`/vehicles/${encodeURIComponent(id)}/logs${queryString(params)}`),
 
   // Audio

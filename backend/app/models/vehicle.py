@@ -1,11 +1,12 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import ForeignKey, String, UniqueConstraint, Uuid
+from sqlalchemy import Boolean, ForeignKey, String, UniqueConstraint, Uuid, true
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.postgres import Base, UTCDateTime
 from app.models.common import utcnow
+from app.models.device import Device
 from app.models.device_status import DeviceStatus
 
 
@@ -18,10 +19,15 @@ class Vehicle(Base):
     status: Mapped[str] = mapped_column(String(20), default="offline")
     owner_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     last_seen_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default=true(), index=True)
+    deleted_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow, onupdate=utcnow)
 
     device_status: Mapped["DeviceStatus | None"] = relationship(lazy="joined", uselist=False)
+    devices: Mapped[list[Device]] = relationship(
+        back_populates="vehicle", lazy="selectin", order_by="Device.registered_at"
+    )
 
 
 class VehicleAssignment(Base):

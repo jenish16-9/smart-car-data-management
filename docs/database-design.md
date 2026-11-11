@@ -54,6 +54,39 @@ Latest health snapshot, one row per vehicle (unique `vehicle_id`): `microphone_s
 (`monitoring_mode`, `audio_capture_enabled`, `recording`) and `online_since` (start of the current
 connected period; drives the uptime display). Updated whenever telemetry arrives.
 
+### `devices` (IoT devices; many per vehicle)
+`id` (UUID PK), `vehicle_id` → `vehicles.id` (**RESTRICT**), `hardware_id` (**unique**, required), `device_name`,
+`device_type` (microphone, audio_sensor, gps, imu, camera, gateway, other), `manufacturer`, `model`,
+`firmware_version`, `status` (PENDING, ACTIVE, WARNING, DELAYED, DISABLED, RETIRED), `is_active`, `last_seen_at`,
+`registered_at`, `removed_at`, `created_at`, `updated_at`. Device-level controls: `monitoring_mode`,
+`audio_capture_enabled`, `recording`, `online_since`, `battery_level`, `configuration` (JSON), `api_key_hash` (SHA-256).
+Indexes: `vehicle_id`, `hardware_id` (unique), `status`, `last_seen_at`, `(vehicle_id, status)`.
+
+### `device_heartbeats` (append-only history)
+`id`, `device_id` → `devices.id` (**RESTRICT**), `received_at`, `heartbeat_status` (ok/warning/error), `battery_level`,
+`signal_strength`, `firmware_version`, `latitude`, `longitude`, `metadata` (JSON), `created_at`.
+Indexes: `device_id`, `received_at`, `heartbeat_status`, `(device_id, received_at)`.
+
+```mermaid
+erDiagram
+  vehicles ||--o{ devices : "has many (RESTRICT)"
+  devices ||--o{ device_heartbeats : "history (RESTRICT)"
+  vehicles ||--o| device_status : "legacy health snapshot"
+  vehicles ||--o{ alerts : "RESTRICT"
+```
+
+**Lifecycle and timing**: heartbeat from PENDING/DELAYED/ACTIVE/WARNING sets ACTIVE (or WARNING when the heartbeat
+status is not `ok` or battery < 15 %); no heartbeat for 300 s (`DEVICE_HEARTBEAT_TIMEOUT_SECONDS`) turns ACTIVE/WARNING
+into DELAYED. DISABLED and RETIRED are only changed by an administrator. Retired devices reject commands, heartbeats and telemetry.
+
+**Soft deletion**: `vehicles` gained `is_active` and `deleted_at`; `DELETE /vehicles/{id}` and `DELETE /devices/{id}`
+never remove rows. `alerts.vehicle_id`, `audio_records.vehicle_id`, `devices.vehicle_id` and
+`device_heartbeats.device_id` use `ON DELETE RESTRICT`, so historical records cannot be lost by deleting a vehicle row.
+`vehicle_code` (unique) and `vehicle_type` were already columns of `vehicles`.
+
+**MongoDB**: `telemetry_events`, `sensor_events` and `device_logs` documents may carry `device_id` and `hardware_id` in
+addition to `vehicle_id` (older documents remain valid). New indexes: `(device_id, timestamp)` and sparse `hardware_id`.
+
 ## Entity relationships
 
 ```mermaid
@@ -146,7 +179,8 @@ erDiagram
 ```
 
 Deleting a vehicle removes its assignments, audio records, alerts, alert actions and device
-status (explicit deletes plus `ON DELETE CASCADE`). MongoDB history is intentionally retained.
+status. Vehicles are no longer hard-deleted: the API performs a soft delete (`is_active=false`, `deleted_at`) and keeps
+every related record. MongoDB history is intentionally retained.
 
 ## MongoDB collections
 

@@ -14,6 +14,7 @@ from app.models.user import User
 from app.repositories import user_repository
 
 _bearer = HTTPBearer(auto_error=False)
+optional_bearer = _bearer  # for endpoints with an alternative credential (device key)
 
 
 @dataclass

@@ -75,6 +75,8 @@ cp .env.example .env        # then edit the values
 | `MONGODB_URL`, `MONGODB_DATABASE` | MongoDB connection |
 | `JWT_SECRET`, `JWT_ALGORITHM`, `ACCESS_TOKEN_EXPIRE_MINUTES` | Token signing. `JWT_SECRET` is **required** unless `ENVIRONMENT=development` |
 | `DEV_ADMIN_EMAIL`, `DEV_ADMIN_PASSWORD` | Development administrator, created at startup (development only) |
+| `DEMO_DRIVER_PASSWORD` | Optional: password of the demo driver the seed creates (never printed) |
+| `DEVICE_HEARTBEAT_TIMEOUT_SECONDS`, `LOW_BATTERY_WARNING_PERCENT` | Device lifecycle tuning (defaults 300 and 15) |
 
 `.env` is git-ignored. Use a strong random `JWT_SECRET` anywhere real.
 
@@ -95,6 +97,54 @@ macOS: `brew tap mongodb/brew && brew install mongodb-community && brew services
 (Linux: follow the MongoDB install guide; or run the `mongo` Docker image). The database and
 collections are created on first write, and indexes at API startup (`python -m app.db.init_db`
 does it on demand).
+
+## Cloud development databases (Neon/Supabase + MongoDB Atlas)
+
+The same code runs against local databases or shared **development** cloud databases; only `.env` changes.
+**Never commit `.env`** (it is git-ignored) and never put real credentials in `.env.example`, code, issues or chat.
+Use development-only credentials and a development-only database, never production ones.
+
+### 1. PostgreSQL on Neon (or Supabase)
+1. Create a project at <https://neon.tech> (or <https://supabase.com>) and a database named `smart_car_dev`.
+2. Create a role for each teammate (Neon: *Roles* tab; Supabase: SQL editor `CREATE ROLE ... LOGIN PASSWORD '...'`) with rights on `smart_car_dev` only.
+3. Copy the connection string and set `POSTGRES_URL`. `postgres://`, `postgresql://` and `?sslmode=require` are accepted and converted automatically for asyncpg (`channel_binding` is dropped). Pooler hosts (Neon `-pooler`, Supabase pooler) are detected and prepared-statement caching is turned off.
+4. Access: both providers require TLS and a password. If you enable IP allow-lists (Neon *IP Allow*; Supabase *Network restrictions*), list only your team's addresses.
+5. Run migrations (use a **direct** (non-pooled) host if your provider recommends it for DDL): `alembic upgrade head`.
+
+### 2. MongoDB Atlas
+1. Create a free cluster at <https://www.mongodb.com/atlas> (project *smart-car-dev*).
+2. *Database Access* → add one database user per teammate, role `readWrite` on database `smart_car_dev` only (not Atlas admin).
+3. *Network Access* → add each teammate's current IP (or a VPN/office range). **Do not use `0.0.0.0/0`.**
+4. *Connect* → *Drivers* → copy the `mongodb+srv://...` string into `MONGODB_URL` and set `MONGODB_DATABASE=smart_car_dev`. SRV URLs need `dnspython`, which is in `requirements.txt`.
+5. Collections and indexes are created automatically at API start (or `python -m app.db.init_db`).
+
+### 3. URL-encode special characters in passwords
+Characters such as `@ : / ? # % & + =` or spaces break a URL unless encoded. Encode only the password:
+```bash
+python3 -c "import urllib.parse,getpass; print(urllib.parse.quote(getpass.getpass(), safe=''))"
+```
+Paste the output in place of `CHANGE_ME`. (Use `quote`, not `quote_plus`: SQLAlchemy does not decode `+` as a space.)
+Simplest alternative: generate a password with letters and digits only.
+
+### 4. Configure after cloning
+```bash
+git clone <repo> && cd smart-car-data-management-fullstack/backend
+python3 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt
+cp .env.example .env        # then fill in YOUR OWN credentials, ask the team lead for host names
+python -m app.db.check_connections   # verifies PostgreSQL + MongoDB (prints no secrets)
+alembic upgrade head                 # creates/updates tables; never drops data
+python -m app.db.seed_demo           # optional demo data (see below)
+uvicorn app.main:app --reload --port 8000
+# new terminal
+cd frontend && python3 -m http.server 5173
+```
+Each teammate keeps their own local `.env` and their own database users, so access can be revoked per person. Set a unique `JWT_SECRET` (`python3 -c "import secrets; print(secrets.token_urlsafe(48))"`). Share the one development database only for development; production gets separate databases and credentials.
+
+### 5. MongoDB Compass
+Open Compass → *New connection* → paste the same `mongodb+srv://...` string (with your own user) → *Connect*. Browse `smart_car_dev` (`telemetry_events`, `audio_analysis_results`, `sensor_events`, `device_logs`). Your IP must be on the Atlas allow-list.
+
+### What the seed script writes
+`python -m app.db.seed_demo` writes to **both** databases: PostgreSQL (users `driver@example.com`, vehicles, assignments, device status, alerts, alert actions) and MongoDB (telemetry, sensor events, device logs). It is idempotent: existing vehicles/users are left untouched, and telemetry and alerts are only added to vehicles that have none, so re-running (or a teammate running it against the shared database) creates no duplicates. It refuses to run unless `ENVIRONMENT=development`. The one-time driver password is printed only when the user is first created.
 
 ## Alembic migrations
 
@@ -160,7 +210,8 @@ All under `/api/v1` and protected by a `Bearer` JWT unless marked public.
 | --- | --- |
 | Auth | `POST /auth/register` (public), `POST /auth/login` (public), `POST /auth/logout`, `GET /auth/me` |
 | Users | `GET /users/me`, `PATCH /users/me` |
-| Vehicles | `POST /vehicles`, `GET /vehicles`, `GET /vehicles/{id}`, `PATCH /vehicles/{id}`, `DELETE /vehicles/{id}`, `PATCH /vehicles/{id}/controls` (monitoring mode, audio capture, recording), `GET /vehicles/{id}/logs` (device activity) |
+| Vehicles | `POST /vehicles`, `GET /vehicles`, `GET /vehicles/{id}`, `PATCH /vehicles/{id}`, `DELETE /vehicles/{id}` (soft delete), `PATCH /vehicles/{id}/controls` (acts on the vehicle's default device), `GET /vehicles/{id}/logs` (device activity) |
+| Devices | `POST /devices` (admin), `GET /devices?vehicle_id=&status=&include_retired=`, `GET/PATCH /devices/{id}` (PATCH admin), `DELETE /devices/{id}` (admin, soft removal), `POST /devices/{id}/rotate-key` (admin), `GET/PATCH /devices/{id}/status`, `POST /devices/{id}/recording/start\|stop`, `POST /devices/{id}/monitoring/pause\|resume`, `POST /devices/{id}/heartbeat`, `GET /devices/{id}/heartbeats?start=&end=&limit=&offset=` |
 | Audio | `POST /audio`, `GET /audio`, `GET /audio/{id}`, `PATCH /audio/{id}/status` |
 | Alerts | `POST /alerts`, `GET /alerts`, `GET /alerts/{id}`, `POST /alerts/{id}/acknowledge`, `POST /alerts/{id}/resolve` |
 | Telemetry | `POST /telemetry/{vehicle}`, `GET /telemetry/{vehicle}`, `GET /telemetry/{vehicle}/latest` |
@@ -170,6 +221,60 @@ All under `/api/v1` and protected by a `Bearer` JWT unless marked public.
 Notes: `{id}` / `{vehicle}` accept a UUID or a vehicle code such as `CAR-1024`. Missing or
 invalid tokens return `401`. Non-admin users only see vehicles they own or are assigned to
 (others return `404`); acknowledging/resolving alerts is **administrator-only** (`403` otherwise).
+
+## Devices, heartbeats and soft deletion
+
+A vehicle has **many IoT devices** (`devices` table). Device-level controls (monitoring mode, audio capture,
+recording) and lifecycle live on the device; the old per-vehicle `device_status` row is kept for the vehicle
+health snapshot (engine/GPS/microphone) and for vehicles that have no registered device yet.
+`vehicle_code` (unique, e.g. `CAR-1024`) and `vehicle_type` already existed on `vehicles`; no VIN/make/model/year
+columns exist, so nothing was removed or renamed.
+
+**Lifecycle statuses**: `PENDING` (registered, no heartbeat yet) → `ACTIVE` (recent heartbeats) / `WARNING`
+(heartbeat `warning`/`error` or battery < 15 %) → `DELAYED` (no heartbeat for `DEVICE_HEARTBEAT_TIMEOUT_SECONDS`,
+default **300 s**) ; `DISABLED` (administrator turned it off) and `RETIRED` (permanently removed).
+
+| Rule | Behaviour |
+| --- | --- |
+| Heartbeat timeout | ACTIVE/WARNING devices not heard from within the timeout become DELAYED (evaluated on read); the next heartbeat restores ACTIVE/WARNING |
+| DISABLED | Rejects control commands (`409`); heartbeats are recorded but never change the status; only an administrator re-enables it |
+| RETIRED | Rejects commands, heartbeats and telemetry (`409`); still listed with `include_retired=true`; history kept; cannot be revived |
+| Soft removal | `DELETE /devices/{id}` sets `RETIRED`, `is_active=false`, `removed_at`; no row is deleted |
+| Vehicle delete | `DELETE /vehicles/{id}` sets `is_active=false`, `deleted_at`; devices, heartbeats, alerts, audio and telemetry are all kept. The `vehicle_code` stays reserved. Administrators can list them with `GET /vehicles?include_inactive=true`. Foreign keys from devices, heartbeats, alerts and audio records use `ON DELETE RESTRICT` |
+
+**Registration**: administrators call `POST /devices` with `vehicle_id` (UUID or code), `hardware_id` (unique,
+4-63 chars of `A-Za-z0-9:_.-`) and `device_type` (`microphone`, `audio_sensor`, `gps`, `imu`, `camera`, `gateway`,
+`other`). The response includes a one-time `device_key` (only its SHA-256 hash is stored; `POST /devices/{id}/rotate-key` issues a new one).
+
+**Heartbeats** authenticate with the `X-Device-Key` header (devices) or a Bearer token (signed-in users with access to the
+vehicle); the body `hardware_id` must match. Every heartbeat is stored in `device_heartbeats` (history is never overwritten).
+
+```bash
+curl -X POST localhost:8000/api/v1/devices -H "Authorization: Bearer $TOKEN" -H 'content-type: application/json' \
+  -d '{"vehicle_id":"CAR-1024","hardware_id":"MIC-1024-Z9","device_type":"microphone"}'
+curl -X POST localhost:8000/api/v1/devices/$DEVICE_ID/heartbeat -H "X-Device-Key: $DEVICE_KEY" \
+  -H 'content-type: application/json' -d '{"hardware_id":"MIC-1024-Z9","battery_level":82,"signal_strength":-61}'
+curl "localhost:8000/api/v1/devices/$DEVICE_ID/heartbeats?limit=20" -H "Authorization: Bearer $TOKEN"
+curl -X POST localhost:8000/api/v1/devices/$DEVICE_ID/recording/start -H "Authorization: Bearer $TOKEN"
+```
+
+Vehicle-level `PATCH /vehicles/{id}/controls` still works and acts on the vehicle's default device (the first
+non-retired one, online devices first). Telemetry may include a `device_id`; MongoDB documents then also carry
+`device_id` and `hardware_id` (older documents only have `vehicle_id`).
+
+**Migration and seed** (`alembic upgrade head` applies `0004`: new tables/columns, one backfilled `LEGACY-<code>`
+device per existing vehicle with its current controls, RESTRICT foreign keys; nothing is deleted):
+
+```bash
+cd backend && alembic upgrade head && python -m app.db.seed_demo
+```
+
+The seed adds devices of every status plus heartbeat history, is idempotent (devices are keyed by `hardware_id`),
+adopts the migration's legacy device as each vehicle's primary unit, and never prints passwords. Set
+`DEMO_DRIVER_PASSWORD` in your `.env` if you also want the `driver@example.com` demo account.
+
+> The cloud PostgreSQL and MongoDB URLs live only in your local `backend/.env`. **Never commit or share
+> `backend/.env`**; do not paste connection strings into issues, chat or logs.
 
 ## Audio → alert workflow
 

@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 import app.models  # noqa: F401  (registers every table on Base.metadata)
 from alembic import context
 from app.core.config import settings
-from app.db.postgres import Base
+from app.db.postgres import Base, engine_options
 
 config = context.config
 target_metadata = Base.metadata
@@ -27,7 +27,7 @@ def _run(connection: Connection) -> None:
 
 
 async def run_migrations_online() -> None:
-    engine = create_async_engine(settings.postgres_url)
+    engine = create_async_engine(settings.postgres_url, **engine_options())
     async with engine.connect() as connection:
         await connection.run_sync(_run)
     await engine.dispose()
