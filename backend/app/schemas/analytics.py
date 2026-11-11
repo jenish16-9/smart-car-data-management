@@ -6,4 +6,3 @@ class AnalyticsSummary(BaseModel):
     critical_events: int
     average_confidence: int
     resolution_rate: int
-

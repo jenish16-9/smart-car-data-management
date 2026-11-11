@@ -1,20 +1,55 @@
-from fastapi import APIRouter, HTTPException
+from typing import Annotated
 
-from app.schemas.vehicle import Vehicle
-from app.services.mock_data import get_vehicles
+from fastapi import APIRouter, Depends, status
+from sqlalchemy.orm import Session
+
+from app.core.database import get_db
+from app.core.security import AuthenticatedUser
+from app.models.device import Device
+from app.models.vehicle import Vehicle
+from app.schemas.device import DeviceCreate, DeviceResponse
+from app.schemas.vehicle import VehicleCreate, VehicleResponse
+from app.services import device_service, vehicle_service
 
 router = APIRouter(prefix="/vehicles", tags=["Vehicles"])
 
 
-@router.get("", response_model=list[Vehicle])
-def list_vehicles() -> list[Vehicle]:
-    return get_vehicles()
+DbSession = Annotated[Session, Depends(get_db)]
 
 
-@router.get("/{vehicle_id}", response_model=Vehicle)
-def get_vehicle(vehicle_id: str) -> Vehicle:
-    vehicle = next((item for item in get_vehicles() if item.id == vehicle_id), None)
-    if vehicle is None:
-        raise HTTPException(status_code=404, detail="Vehicle not found")
-    return vehicle
+@router.post("", response_model=VehicleResponse, status_code=status.HTTP_201_CREATED)
+def create_vehicle(
+    payload: VehicleCreate, db: DbSession, user: AuthenticatedUser
+) -> Vehicle:
+    return vehicle_service.create_vehicle(db, user.id, payload)
 
+
+@router.get("", response_model=list[VehicleResponse])
+def list_vehicles(db: DbSession, user: AuthenticatedUser) -> list[Vehicle]:
+    return vehicle_service.list_vehicles(db, user.id)
+
+
+@router.get("/{vehicle_id}", response_model=VehicleResponse)
+def get_vehicle(vehicle_id: str, db: DbSession, user: AuthenticatedUser) -> Vehicle:
+    return vehicle_service.get_owned_vehicle(db, user.id, vehicle_id)
+
+
+@router.post(
+    "/{vehicle_id}/devices",
+    response_model=DeviceResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_vehicle_device(
+    vehicle_id: str,
+    payload: DeviceCreate,
+    db: DbSession,
+    user: AuthenticatedUser,
+) -> Device:
+    return device_service.create_device(db, user.id, vehicle_id, payload)
+
+
+@router.get("/{vehicle_id}/devices", response_model=list[DeviceResponse])
+def list_vehicle_devices(
+    vehicle_id: str, db: DbSession, user: AuthenticatedUser
+) -> list[Device]:
+    return device_service.list_vehicle_devices(db, user.id, vehicle_id)

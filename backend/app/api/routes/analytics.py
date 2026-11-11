@@ -9,4 +9,3 @@ router = APIRouter(prefix="/analytics", tags=["Analytics"])
 @router.get("/summary", response_model=AnalyticsSummary)
 def analytics_summary() -> AnalyticsSummary:
     return get_analytics()
-

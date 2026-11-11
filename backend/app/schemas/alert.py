@@ -11,4 +11,3 @@ class Alert(BaseModel):
     status: str
     detected_at: datetime
     location: str
-
