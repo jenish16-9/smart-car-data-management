@@ -141,6 +141,39 @@ class MockAudioClassifier:
 default_classifier: AudioClassifier = MockAudioClassifier()
 
 
+class UnavailableAudioClassifier:
+    """Fail closed when a configured real model cannot be loaded."""
+
+    model_name = "unavailable-audio-classifier"
+    model_version = "unavailable"
+
+    def __init__(self, reason: str) -> None:
+        self.reason = reason
+
+    def classify(self, audio: AudioClassificationInput) -> AudioClassificationResult:
+        raise RuntimeError(self.reason)
+
+
+def configure_default_classifier(backend: str, model_path: str) -> None:
+    """Select the development mock or a trained local artifact at application startup."""
+    global default_classifier
+    if backend == "mock":
+        default_classifier = MockAudioClassifier()
+        return
+    if backend != "sklearn":
+        reason = f"Unsupported AUDIO_CLASSIFIER_BACKEND: {backend}"
+        default_classifier = UnavailableAudioClassifier(reason)
+        raise ValueError(reason)
+    try:
+        from app.ml.sklearn_classifier import SklearnAudioClassifier
+
+        default_classifier = SklearnAudioClassifier(model_path)
+    except Exception as exc:
+        reason = f"Could not load audio model {model_path}: {exc}"
+        default_classifier = UnavailableAudioClassifier(reason)
+        raise RuntimeError(reason) from exc
+
+
 def classify_audio(audio: str | bytes | FeatureValues | AudioClassificationInput) -> AudioClassificationResult:
     """Compatibility entry point used by the service and existing model adapters."""
     if isinstance(audio, AudioClassificationInput):

@@ -243,6 +243,11 @@ application label mapping, and replace `default_classifier`. For heavy models, m
 background worker/queue. Accuracy claims require a labeled, held-out evaluation set representing
 real vehicle-cabin and road-noise conditions.
 
+The repository also includes an optional, trainable CPU baseline with leakage-safe dataset auditing,
+feature extraction, evaluation, artifact loading, and fail-closed configuration. See
+[docs/audio-model.md](docs/audio-model.md). Install it with `pip install -r backend/requirements-ml.txt`;
+the default application dependency set remains lightweight and continues to use the mock backend.
+
 ## Known limitations
 
 - Device controls (monitoring mode, audio capture, recording) are saved to PostgreSQL and logged
