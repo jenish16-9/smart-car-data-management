@@ -23,7 +23,7 @@ async function apiRequest(path, options = {}) {
     throw new Error(detail || 'API request failed');
   }
 
-  return response.json();
+  return response.status === 204 ? null : response.json();
 }
 
 export const api = {
@@ -38,12 +38,31 @@ export const api = {
     body: JSON.stringify(vehicle),
   }),
   vehicle: (id) => apiRequest(`/vehicles/${id}`),
+  updateVehicle: (id, vehicle) => apiRequest(`/vehicles/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(vehicle),
+  }),
+  removeVehicle: (id) => apiRequest(`/vehicles/${id}`, { method: 'DELETE' }),
   vehicleDevices: (id) => apiRequest(`/vehicles/${id}/devices`),
   createDevice: (vehicleId, device) => apiRequest(`/vehicles/${vehicleId}/devices`, {
     method: 'POST',
     body: JSON.stringify(device),
   }),
   device: (id) => apiRequest(`/devices/${id}`),
+  updateDevice: (id, device) => apiRequest(`/devices/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(device),
+  }),
+  updateDeviceConfiguration: (id, configuration) => apiRequest(`/devices/${id}/configuration`, {
+    method: 'PUT',
+    body: JSON.stringify({ configuration }),
+  }),
+  heartbeat: (id, heartbeat) => apiRequest(`/devices/${id}/heartbeat`, {
+    method: 'POST',
+    body: JSON.stringify(heartbeat),
+  }),
+  deviceHeartbeats: (id) => apiRequest(`/devices/${id}/heartbeats`),
+  removeDevice: (id) => apiRequest(`/devices/${id}`, { method: 'DELETE' }),
   alerts: () => apiRequest('/alerts'),
   analytics: () => apiRequest('/analytics/summary'),
 };

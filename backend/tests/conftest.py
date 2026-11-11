@@ -15,7 +15,7 @@ os.environ.setdefault("DATABASE_URL", "sqlite://")
 
 from app.core.database import Base, get_db  # noqa: E402
 from app.main import app  # noqa: E402
-from app.models import Device, Vehicle  # noqa: E402, F401
+from app.models import Device, DeviceHeartbeat, Vehicle  # noqa: E402, F401
 
 
 @pytest.fixture()

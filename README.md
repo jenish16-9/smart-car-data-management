@@ -90,8 +90,27 @@ curl -X POST http://localhost:8000/api/v1/vehicles/$VEHICLE_ID/devices \
   -d '{"hardware_id":"AUD-EDGE-0001","name":"Cabin AudioGuard","firmware_version":"1.0.0"}'
 ```
 
-New devices begin in `PENDING`. Heartbeat-driven connectivity and device
-lifecycle transitions are planned for the next vertical slice.
+New devices begin in `PENDING`. The current management API includes:
+
+- `PATCH /api/v1/vehicles/{vehicleId}` to update or deactivate a vehicle
+- `DELETE /api/v1/vehicles/{vehicleId}` for soft removal
+- `PATCH /api/v1/devices/{deviceId}` to update, disable, or retire a device
+- `PUT /api/v1/devices/{deviceId}/configuration` to replace validated settings
+- `POST /api/v1/devices/{deviceId}/heartbeat` to record connectivity and health
+- `GET /api/v1/devices/{deviceId}/heartbeats` for recent heartbeat history
+- `DELETE /api/v1/devices/{deviceId}` for soft removal with retained history
+
+Connectivity thresholds are configured with
+`DEVICE_DELAYED_AFTER_SECONDS` (default 90) and
+`DEVICE_OFFLINE_AFTER_SECONDS` (default 300). A healthy heartbeat moves a
+non-disabled device to `ONLINE`; a health warning moves it to `WARNING`.
+Elapsed time moves it to `DELAYED` and then `OFFLINE`. Heartbeats are recorded
+for `DISABLED` devices but never reactivate them. `RETIRED` is terminal and
+rejects new heartbeats and configuration changes.
+
+Vehicle and device DELETE operations are soft removals. They disappear from
+active inventory while their records and heartbeat history remain available
+for auditing and future database integration.
 
 ## Tests
 
@@ -106,13 +125,15 @@ pytest -q
 
 The integration tests use an isolated in-memory SQLite database and cover the
 vehicle/device workflow, authentication, ownership isolation, validation,
-invalid associations, and duplicate hardware IDs.
+invalid associations, duplicate hardware IDs, settings, lifecycle transitions,
+heartbeat connectivity, terminal retirement, and retained history.
 
 The frontend is intentionally dependency-free, so it has no bundling/build
 step. Validate its JavaScript modules with `node --check frontend/app.js` and
 `node --check frontend/api.js` from the repository root.
 
-Alerts and analytics remain backed by the original mock data. No production ML
-model is included in this slice.
+Alerts and analytics remain backed by the original mock data. Audio simulation,
+classifier interfaces, model training, and inference are intentionally deferred
+to the audio/ML phase.
 
 

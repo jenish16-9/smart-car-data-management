@@ -29,3 +29,12 @@ class VehicleResponse(VehicleCreate):
     status: VehicleStatus
     created_at: datetime
     updated_at: datetime
+
+
+class VehicleUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=100)
+    make: str | None = Field(default=None, min_length=1, max_length=60)
+    model: str | None = Field(default=None, min_length=1, max_length=60)
+    year: int | None = Field(default=None, ge=1886, le=2100)
+    license_plate: str | None = Field(default=None, max_length=20)
+    status: VehicleStatus | None = None

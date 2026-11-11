@@ -8,6 +8,8 @@ class Settings(BaseSettings):
     frontend_origin: str = "http://localhost:5173"
     jwt_secret: str = "replace-this-development-secret"
     database_url: str = "sqlite:///./smartcar.db"
+    device_delayed_after_seconds: int = 90
+    device_offline_after_seconds: int = 300
 
     model_config = SettingsConfigDict(env_file=".env", case_sensitive=False)
 

@@ -9,6 +9,7 @@ from app.core.database import Base
 from app.models.vehicle import utc_now
 
 if TYPE_CHECKING:
+    from app.models.heartbeat import DeviceHeartbeat
     from app.models.vehicle import Vehicle
 
 
@@ -50,5 +51,14 @@ class Device(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False
     )
+    retired_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    removed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     vehicle: Mapped["Vehicle"] = relationship(back_populates="devices")  # noqa: F821
+    heartbeats: Mapped[list["DeviceHeartbeat"]] = relationship(  # noqa: F821
+        back_populates="device", cascade="all, delete-orphan"
+    )

@@ -182,6 +182,11 @@ button.record-card:hover { border-color: #9cc7fa; background: #f1f7ff; }
 .vehicle-summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; margin-bottom: 18px; }
 .vehicle-summary strong { display: block; margin-top: 5px; }
 .text-btn { border: 0; background: transparent; color: var(--blue); font-weight: 750; padding: 0; margin-bottom: 16px; }
+.danger-btn { border: 1px solid #efb0b0; border-radius: 9px; padding: 13px 18px; background: #fff1f1; color: #b52e3b; font-weight: 750; }
+.danger-btn:hover { background: #ffe4e4; }
+.action-buttons { display: flex; flex-wrap: wrap; gap: 10px; }
+.action-stack { display: grid; gap: 12px; }
+.help-text { color: var(--muted); font-size: 13px; line-height: 1.5; }
 button:disabled { cursor: not-allowed; opacity: .65; }
 @media (max-width: 1000px) { .app-shell { grid-template-columns: 80px 1fr; } .side-brand { font-size: 0; } .nav-btn { justify-content: center; padding: 15px; } .nav-btn span:last-child { display: none; } .top-brand { font-size: 20px; } .metrics { grid-template-columns: repeat(2, 1fr); } }
 @media (max-width: 720px) { .app-shell { display: block; } .sidebar { padding: 8px; position: sticky; top: 0; z-index: 10; height: auto; } .side-brand { display: none; } .nav { display: flex; overflow-x: auto; } .nav-btn { min-width: max-content; } .nav-btn span:last-child { display: block; } .topbar { height: auto; padding: 15px 18px; flex-wrap: wrap; } .top-actions { width: 100%; justify-content: space-between; } .content { padding: 24px 16px; } .page-title { font-size: 30px; } .metrics, .dashboard-grid, .map-layout, .two-col, .filters, .management-grid, .vehicle-summary, .form-row { grid-template-columns: 1fr; } .record-card { grid-template-columns: 1fr; } .auth-card { padding: 30px 24px; } .car-panel { min-height: 480px; } .vehicle-status-grid { grid-template-columns: 1fr; } }
