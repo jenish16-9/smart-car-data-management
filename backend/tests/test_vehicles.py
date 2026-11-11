@@ -62,7 +62,12 @@ async def test_regular_user_cannot_assign_others(client, user_headers):
 
 
 async def test_delete_vehicle_removes_alerts_and_audio(client, admin_headers, vehicle):
-    alert = {"vehicle_id": "CAR-1024", "event_type": "horn", "severity": "low", "confidence": 0.9}
+    alert = {
+        "vehicle_id": "CAR-1024",
+        "event_type": "emergency_vehicle_siren",
+        "severity": "high",
+        "confidence": 0.9,
+    }
     created = (await client.post("/alerts", json=alert, headers=admin_headers)).json()
     audio = {
         "vehicle_id": "CAR-1024",

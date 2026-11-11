@@ -16,10 +16,12 @@ from app.services import vehicle_service
 ALERT_CONFIDENCE_THRESHOLD = 0.80
 SEVERITY_BY_CLASS = {
     "crash": "critical",
-    "glass_break": "high",
-    "engine_noise": "medium",
-    "horn": "low",
-    "cabin_noise": "low",
+    "gunshot": "critical",
+    "glass_breaking": "high",
+    "screaming": "high",
+    "emergency_vehicle_siren": "high",
+    "tire_skidding": "high",
+    "abnormal_engine_noise": "medium",
 }
 
 

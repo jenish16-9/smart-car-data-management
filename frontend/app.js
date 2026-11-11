@@ -61,7 +61,7 @@ function duration(iso) {
   return `${minutes} min`;
 }
 
-const TYPE_TONE = { glass_break: 'red', crash: 'red', engine_noise: 'blue', cabin_noise: 'green', horn: 'amber', normal: 'green' };
+const TYPE_TONE = { emergency_vehicle_siren: 'amber', glass_breaking: 'red', screaming: 'red', gunshot: 'red', crash: 'red', tire_skidding: 'amber', abnormal_engine_noise: 'blue', normal: 'green' };
 const SEVERITY_TONE = { critical: 'red', high: 'red', medium: 'amber', low: 'blue' };
 const ALERT_LABEL = { open: 'Unread', acknowledged: 'Acknowledged', resolved: 'Resolved' };
 const STATUS_TONE = { online: 'green', healthy: 'green', locked: 'green', warning: 'amber' };
@@ -90,7 +90,7 @@ function sampleData() {
     alertList: [],
     alert: { id: null, title: 'Glass Break Detected', severity: 'High Severity', tone: 'red', vehicle: 'CAR-1024', time: '10:24 AM', confidence: '94% Confidence', location: 'Front Right', status: 'Unread', model: 'v2.3.1', ms: '320 ms', audio: 'AUD-20240218-102435-7F3A', reviewed: '-' },
     overTime: [15, 22, 30, 18, 25, 33, 46, 35, 18, 20, 29, 42, 58, 37].map((h, i) => ({ h, label: i % 3 === 0 ? `Apr ${i + 1}` : '' })),
-    byType: [{ name: 'Glass Break', key: 'glass_break', tone: 'red', count: 168, conf: '94%', last: 'Apr 30, 2024 14:32:18' }, { name: 'Engine Noise', key: 'engine_noise', tone: 'blue', count: 302, conf: '91%', last: 'Apr 30, 2024 13:17:05' }, { name: 'Cabin Noise', key: 'cabin_noise', tone: 'green', count: 418, conf: '89%', last: 'Apr 30, 2024 12:54:41' }],
+    byType: [{ name: 'Glass Breaking', key: 'glass_breaking', tone: 'red', count: 168, conf: '94%', last: 'Apr 30, 2024 14:32:18' }, { name: 'Abnormal Engine Noise', key: 'abnormal_engine_noise', tone: 'blue', count: 302, conf: '91%', last: 'Apr 30, 2024 13:17:05' }, { name: 'Emergency Vehicle Siren', key: 'emergency_vehicle_siren', tone: 'amber', count: 118, conf: '89%', last: 'Apr 30, 2024 12:54:41' }],
     activity: [['2024-06-24 10:18:32', 'Audio Capture Started', 'Microphone activated'], ['2024-06-24 10:15:21', 'Monitoring Mode Changed', 'Mode set to Continuous'], ['2024-06-24 10:12:03', 'Device Status Check', 'All systems normal'], ['2024-06-24 10:08:17', 'Connection Established', 'Vehicle connected to server']],
     ranges: ['Apr 1, 2024 - Apr 30, 2024', 'Last 7 days'],
   };

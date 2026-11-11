@@ -229,12 +229,19 @@ FastAPI dependency overrides, so they never connect to (or delete) a real databa
 ## Future ML model integration
 
 `backend/app/services/audio_classifier.py` currently contains a **mock classifier**. It does
-not analyse audio: it returns a deterministic placeholder label from a hash of the path, so the
-pipeline can be built and tested. **It is not a trained model and must not be used for real
-detection.** To integrate a real model (PyTorch, TensorFlow, YAMNet, …), keep the interface
-`classify_audio(audio_path) -> AudioClassificationResult`, download/stream the file from the
-storage URL, run inference, and update `MODEL_NAME` / `MODEL_VERSION`. The rest of the system is
-unchanged. For heavy models, move step 3 of the workflow to a background worker/queue.
+not analyse audio: it returns a deterministic placeholder label from a hash, so the pipeline can
+be built and tested. **It is not a trained model and must not be used for real detection.** The
+replaceable `AudioClassifier` protocol accepts `AudioClassificationInput` containing exactly one
+storage URI, raw audio byte sequence, or extracted numeric feature map. It returns an
+`AudioClassificationResult` with `event_type`, `confidence`, `model_version`, and a timezone-aware
+`processing_timestamp` (plus model name and measured processing time for persistence/monitoring).
+
+The supported alert categories are `emergency_vehicle_siren`, `glass_breaking`, `screaming`,
+`gunshot`, `crash`, `tire_skidding`, and `abnormal_engine_noise`; `normal` is the negative outcome.
+To integrate YAMNet or another real model, implement `AudioClassifier`, validate its AudioSet-to-
+application label mapping, and replace `default_classifier`. For heavy models, move inference to a
+background worker/queue. Accuracy claims require a labeled, held-out evaluation set representing
+real vehicle-cabin and road-noise conditions.
 
 ## Known limitations
 

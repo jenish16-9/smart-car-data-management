@@ -138,7 +138,7 @@ SPECS: tuple[VehicleSpec, ...] = (
         6.25,
         drifting=True,
         driver=True,
-        alerts=(AlertSpec("engine_noise", "medium", 0.86, "Engine Bay", "open", 18),),
+        alerts=(AlertSpec("abnormal_engine_noise", "medium", 0.86, "Engine Bay", "open", 18),),
     ),
     VehicleSpec(
         "CAR-1028",
@@ -175,7 +175,7 @@ SPECS: tuple[VehicleSpec, ...] = (
         4320,
         None,
         driver=True,
-        alerts=(AlertSpec("horn", "low", 0.82, "Front", "resolved", 4500),),
+        alerts=(AlertSpec("emergency_vehicle_siren", "high", 0.82, "Front", "resolved", 4500),),
     ),
     VehicleSpec(
         "CAR-1030",
@@ -193,7 +193,7 @@ SPECS: tuple[VehicleSpec, ...] = (
         False,
         95,
         None,
-        alerts=(AlertSpec("engine_noise", "high", 0.91, "Engine Bay", "acknowledged", 240),),
+        alerts=(AlertSpec("abnormal_engine_noise", "high", 0.91, "Engine Bay", "acknowledged", 240),),
     ),
     VehicleSpec(
         "CAR-1031",
@@ -212,7 +212,7 @@ SPECS: tuple[VehicleSpec, ...] = (
         2,
         31.0,
         drifting=True,
-        alerts=(AlertSpec("glass_break", "high", 0.93, "Rear Left", "open", 35),),
+        alerts=(AlertSpec("glass_breaking", "high", 0.93, "Rear Left", "open", 35),),
     ),
     VehicleSpec(
         "CAR-1032",

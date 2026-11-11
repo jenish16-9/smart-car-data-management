@@ -7,7 +7,15 @@ from pydantic import BaseModel, Field
 from app.models.alert import Alert, AlertAction
 from app.schemas.audio import AnalysisOut
 
-EventType = Literal["glass_break", "engine_noise", "cabin_noise", "horn", "crash", "normal"]
+EventType = Literal[
+    "emergency_vehicle_siren",
+    "glass_breaking",
+    "screaming",
+    "gunshot",
+    "crash",
+    "tire_skidding",
+    "abnormal_engine_noise",
+]
 Severity = Literal["low", "medium", "high", "critical"]
 AlertStatus = Literal["open", "acknowledged", "resolved"]
 

@@ -249,3 +249,8 @@ Monitoring pages read the latest document.
 Analytics: `total_events`, `average_confidence`, events-over-time and events-by-type come from
 MongoDB `audio_analysis_results`; `critical_events` (severity `high`/`critical`),
 `resolution_rate` and `active_alert_count` come from PostgreSQL `alerts`.
+
+The classifier contract supports a storage URI, raw audio bytes, or extracted numeric features.
+Its application labels are `emergency_vehicle_siren`, `glass_breaking`, `screaming`, `gunshot`,
+`crash`, `tire_skidding`, `abnormal_engine_noise`, and the negative `normal` result. MongoDB keeps
+the field name `predicted_class` for compatibility with existing analytics documents.

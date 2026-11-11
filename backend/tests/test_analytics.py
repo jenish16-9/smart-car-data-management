@@ -1,5 +1,17 @@
+from app.models.common import utcnow
 from app.services import audio_classifier
 from app.services.audio_classifier import AudioClassificationResult
+
+
+def _result(event_type: str, confidence: float) -> AudioClassificationResult:
+    return AudioClassificationResult(
+        event_type=event_type,
+        confidence=confidence,
+        model_version="1",
+        processing_timestamp=utcnow(),
+        model_name="test-model",
+        processing_time_ms=1,
+    )
 
 
 async def _upload(client, headers, name):
@@ -28,14 +40,12 @@ async def test_summary_on_empty_system(client, admin_headers):
 
 
 async def test_summary_reflects_audio_and_alerts(client, admin_headers, vehicle, monkeypatch):
-    results = iter([("glass_break", 0.90), ("normal", 0.70), ("engine_noise", 0.90)])
-    monkeypatch.setattr(
-        audio_classifier, "classify_audio", lambda _p: AudioClassificationResult(*next(results), "m", "1", 1)
-    )
+    results = iter([("glass_breaking", 0.90), ("normal", 0.70), ("abnormal_engine_noise", 0.90)])
+    monkeypatch.setattr(audio_classifier, "classify_audio", lambda _p: _result(*next(results)))
     for name in ("a.wav", "b.wav", "c.wav"):
         await _upload(client, admin_headers, name)
     glass_alert = (await client.get("/alerts", headers=admin_headers)).json()
-    resolved_id = next(a["id"] for a in glass_alert if a["event_type"] == "glass_break")
+    resolved_id = next(a["id"] for a in glass_alert if a["event_type"] == "glass_breaking")
     await client.post(f"/alerts/{resolved_id}/resolve", headers=admin_headers)
 
     summary = (await client.get("/analytics/summary", headers=admin_headers)).json()
@@ -47,17 +57,15 @@ async def test_summary_reflects_audio_and_alerts(client, admin_headers, vehicle,
 
 
 async def test_events_by_type_and_over_time(client, admin_headers, vehicle, monkeypatch):
-    results = iter([("glass_break", 0.9), ("glass_break", 0.8), ("horn", 0.7)])
-    monkeypatch.setattr(
-        audio_classifier, "classify_audio", lambda _p: AudioClassificationResult(*next(results), "m", "1", 1)
-    )
+    results = iter([("glass_breaking", 0.9), ("glass_breaking", 0.8), ("tire_skidding", 0.7)])
+    monkeypatch.setattr(audio_classifier, "classify_audio", lambda _p: _result(*next(results)))
     for name in ("a.wav", "b.wav", "c.wav"):
         await _upload(client, admin_headers, name)
 
     by_type = (await client.get("/analytics/events-by-type", headers=admin_headers)).json()
     assert [(r["event_type"], r["count"], r["average_confidence"]) for r in by_type] == [
-        ("glass_break", 2, 85),
-        ("horn", 1, 70),
+        ("glass_breaking", 2, 85),
+        ("tire_skidding", 1, 70),
     ]
     over_time = (await client.get("/analytics/events-over-time", headers=admin_headers)).json()
     assert len(over_time) == 1 and over_time[0]["count"] == 3
