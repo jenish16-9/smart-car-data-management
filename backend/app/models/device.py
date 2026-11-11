@@ -22,13 +22,16 @@ class Device(Base):
         ForeignKey("users.id", ondelete="SET NULL"), index=True, nullable=True
     )
     hardware_id: Mapped[str] = mapped_column(String(100), unique=True, index=True)
-    name: Mapped[str] = mapped_column(String(100))
+    # Attribute names follow this component's API; database column names retain
+    # the shared database component's established schema.
+    name: Mapped[str] = mapped_column("device_name", String(100))
     firmware_version: Mapped[str | None] = mapped_column(String(50), nullable=True)
-    state: Mapped[str] = mapped_column(String(20), default="PENDING")
+    state: Mapped[str] = mapped_column("status", String(20), default="PENDING")
     configuration: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
-    last_heartbeat_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
+    last_heartbeat_at: Mapped[datetime | None] = mapped_column("last_seen_at", UTCDateTime, nullable=True)
     retired_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
     removed_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
+    registered_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow, onupdate=utcnow)
 

@@ -73,7 +73,7 @@ cp .env.example .env        # then edit the values
 | --- | --- |
 | `APP_NAME`, `API_PREFIX`, `ENVIRONMENT` | App metadata; `ENVIRONMENT=development` enables the dev login seed |
 | `FRONTEND_ORIGIN` | Allowed CORS origin(s), comma-separated (default `http://localhost:5173`) |
-| `POSTGRES_URL` | `postgresql+asyncpg://user:password@host:5432/smart_car` |
+| `POSTGRES_URL` | `postgresql+asyncpg://user:password@host:5432/smart_car` (managed PostgreSQL commonly also needs `?ssl=require`) |
 | `MONGODB_URL`, `MONGODB_DATABASE` | MongoDB connection |
 | `JWT_SECRET`, `JWT_ALGORITHM`, `ACCESS_TOKEN_EXPIRE_MINUTES` | Token signing. `JWT_SECRET` is **required** unless `ENVIRONMENT=development` |
 | `DEV_ADMIN_EMAIL`, `DEV_ADMIN_PASSWORD` | Development administrator, created at startup (development only) |
@@ -109,6 +109,13 @@ alembic downgrade -1                                  # roll back one revision
 ```
 
 The database URL comes from `POSTGRES_URL`.
+
+For the shared development database, migration `0005_shared_device_schema_compatibility` maps this
+component onto the database component's existing `device_name`, `status`, and `last_seen_at`
+columns. It adds only the missing ownership/retirement metadata, widens compatible fields, and
+preserves database-owned columns and the existing PostgreSQL heartbeat table. The database table
+owner must apply this migration; ordinary read/write credentials cannot alter a table owned by a
+different role. Its downgrade is intentionally non-destructive.
 
 ## Start the backend
 
