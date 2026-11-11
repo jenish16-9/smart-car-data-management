@@ -6,10 +6,35 @@ from app.core.dependencies import get_current_user
 from app.db.mongodb import get_mongo_db
 from app.db.postgres import get_session
 from app.models.user import User
+from app.schemas.device import DeviceCreate, DeviceOut
 from app.schemas.vehicle import DeviceLogOut, VehicleControlsUpdate, VehicleCreate, VehicleOut, VehicleUpdate
-from app.services import vehicle_service
+from app.services import device_service, vehicle_service
 
 router = APIRouter(prefix="/vehicles", tags=["Vehicles"])
+
+
+@router.post(
+    "/{vehicle_id}/devices",
+    response_model=DeviceOut,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_device(
+    vehicle_id: str,
+    payload: DeviceCreate,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> DeviceOut:
+    return DeviceOut.model_validate(await device_service.create_device(session, user, vehicle_id, payload))
+
+
+@router.get("/{vehicle_id}/devices", response_model=list[DeviceOut])
+async def list_devices(
+    vehicle_id: str,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> list[DeviceOut]:
+    devices = await device_service.list_devices(session, user, vehicle_id)
+    return [DeviceOut.model_validate(device) for device in devices]
 
 
 @router.post("", response_model=VehicleOut, status_code=status.HTTP_201_CREATED)

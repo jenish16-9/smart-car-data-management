@@ -15,9 +15,9 @@ telemetry, device status, alerts and analytics.
                           ┌───────────────────┴───────────────────┐
                           ▼                                       ▼
                   PostgreSQL (SQLAlchemy)                 MongoDB (Motor)
-        users, vehicles, assignments, sessions,     telemetry_events, sensor_events,
+        users, vehicles, devices, assignments,      telemetry_events, sensor_events,
         audio metadata, alerts, alert_actions,      audio_analysis_results, device_logs
-        device_status
+        device_status                               device_heartbeats
 
  Audio files themselves live in object storage (S3 / MinIO). Only the URL + metadata is stored.
 ```
@@ -36,10 +36,10 @@ Layering: **routes** (HTTP only) → **services** (business rules, access contro
 │   ├── tests/                         # pytest suite (isolated, in-memory databases)
 │   └── app/
 │       ├── main.py
-│       ├── api/routes/    auth users vehicles audio alerts telemetry analytics
+│       ├── api/routes/    auth users vehicles devices audio alerts telemetry analytics
 │       ├── core/          config security dependencies errors
 │       ├── db/            postgres mongodb init_db
-│       ├── models/        user vehicle audio alert device_status   (PostgreSQL)
+│       ├── models/        user vehicle device audio alert device_status   (PostgreSQL)
 │       ├── schemas/       Pydantic request/response models
 │       ├── repositories/  user vehicle audio alert (PG), telemetry analysis (MongoDB)
 │       └── services/      auth vehicle audio alert telemetry analytics audio_classifier
@@ -49,14 +49,16 @@ Layering: **routes** (HTTP only) → **services** (business rules, access contro
 ## PostgreSQL responsibilities
 
 Relational, transactional data: `users`, `user_sessions` (revocable login sessions), `vehicles`,
-`vehicle_assignments`, `audio_records` (metadata + storage URL), `alerts`, `alert_actions`
-(audit trail) and `device_status` (latest health snapshot per vehicle).
+`vehicle_assignments`, `devices` (identity, configuration and current state), `audio_records`
+(metadata + storage URL), `alerts`, `alert_actions` (audit trail) and `device_status` (latest
+vehicle-level health snapshot).
 
 ## MongoDB responsibilities
 
 High-volume / flexible data: `telemetry_events` (GPS + vehicle readings), `sensor_events`,
-`audio_analysis_results` (ML output) and `device_logs`. Vehicles are referenced by their
-`vehicle_code` (e.g. `CAR-1024`).
+`audio_analysis_results` (ML output), `device_logs` and append-only `device_heartbeats`. Vehicles
+are referenced by their `vehicle_code` (e.g. `CAR-1024`); heartbeat documents also reference the
+PostgreSQL device UUID as a string.
 
 ## Environment setup
 
@@ -75,6 +77,7 @@ cp .env.example .env        # then edit the values
 | `MONGODB_URL`, `MONGODB_DATABASE` | MongoDB connection |
 | `JWT_SECRET`, `JWT_ALGORITHM`, `ACCESS_TOKEN_EXPIRE_MINUTES` | Token signing. `JWT_SECRET` is **required** unless `ENVIRONMENT=development` |
 | `DEV_ADMIN_EMAIL`, `DEV_ADMIN_PASSWORD` | Development administrator, created at startup (development only) |
+| `DEVICE_DELAYED_AFTER_SECONDS`, `DEVICE_OFFLINE_AFTER_SECONDS` | Connectivity thresholds (defaults: 90 / 300 seconds) |
 
 `.env` is git-ignored. Use a strong random `JWT_SECRET` anywhere real.
 
@@ -160,7 +163,8 @@ All under `/api/v1` and protected by a `Bearer` JWT unless marked public.
 | --- | --- |
 | Auth | `POST /auth/register` (public), `POST /auth/login` (public), `POST /auth/logout`, `GET /auth/me` |
 | Users | `GET /users/me`, `PATCH /users/me` |
-| Vehicles | `POST /vehicles`, `GET /vehicles`, `GET /vehicles/{id}`, `PATCH /vehicles/{id}`, `DELETE /vehicles/{id}`, `PATCH /vehicles/{id}/controls` (monitoring mode, audio capture, recording), `GET /vehicles/{id}/logs` (device activity) |
+| Vehicles | `POST /vehicles`, `GET /vehicles`, `GET /vehicles/{id}`, `PATCH /vehicles/{id}`, `DELETE /vehicles/{id}`, `POST /vehicles/{id}/devices`, `GET /vehicles/{id}/devices`, `PATCH /vehicles/{id}/controls`, `GET /vehicles/{id}/logs` |
+| Devices | `GET /devices/{id}`, `PATCH /devices/{id}`, `PUT /devices/{id}/configuration`, `POST /devices/{id}/heartbeat`, `GET /devices/{id}/heartbeats`, `DELETE /devices/{id}` |
 | Audio | `POST /audio`, `GET /audio`, `GET /audio/{id}`, `PATCH /audio/{id}/status` |
 | Alerts | `POST /alerts`, `GET /alerts`, `GET /alerts/{id}`, `POST /alerts/{id}/acknowledge`, `POST /alerts/{id}/resolve` |
 | Telemetry | `POST /telemetry/{vehicle}`, `GET /telemetry/{vehicle}`, `GET /telemetry/{vehicle}/latest` |
@@ -170,6 +174,32 @@ All under `/api/v1` and protected by a `Bearer` JWT unless marked public.
 Notes: `{id}` / `{vehicle}` accept a UUID or a vehicle code such as `CAR-1024`. Missing or
 invalid tokens return `401`. Non-admin users only see vehicles they own or are assigned to
 (others return `404`); acknowledging/resolving alerts is **administrator-only** (`403` otherwise).
+
+## Vehicle and IoT device workflow
+
+Run `alembic upgrade head` to apply migration `0004_iot_devices`. Device identity, ownership,
+configuration, current lifecycle state and last-heartbeat time are stored in PostgreSQL. Full
+heartbeat history is append-only in MongoDB. Deleting a device is a soft removal: it is retired and
+hidden from its vehicle list while its PostgreSQL row and MongoDB history remain. Deleting a vehicle
+also detaches and retires its devices before the existing vehicle cleanup runs.
+
+```bash
+# Register a device under a vehicle (use an access token from /auth/login)
+curl -X POST http://localhost:8000/api/v1/vehicles/CAR-1024/devices \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"hardware_id":"AUD-EDGE-0001","name":"Cabin AudioGuard","firmware_version":"1.0.0"}'
+
+# First valid heartbeat changes PENDING to ONLINE
+curl -X POST http://localhost:8000/api/v1/devices/DEVICE_UUID/heartbeat \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"health":"HEALTHY","metrics":{"batteryPercent":88}}'
+```
+
+Connectivity states are `PENDING`, `ONLINE`, `WARNING`, `DELAYED`, `OFFLINE`, `DISABLED`, and
+`RETIRED`. State is refreshed when a device is read: after the configured thresholds, a missing
+heartbeat changes an active device to `DELAYED` and then `OFFLINE`. A valid heartbeat restores an
+active device to `ONLINE` (or `WARNING` for a health warning), but never reactivates `DISABLED` or
+`RETIRED`. Retirement is terminal and rejects configuration changes and new heartbeats.
 
 ## Audio → alert workflow
 
@@ -212,6 +242,8 @@ unchanged. For heavy models, move step 3 of the workflow to a background worker/
   to MongoDB, but there is no real device agent yet, so they do not command physical hardware.
   Uptime is real: it counts from the moment a vehicle's first telemetry arrives (`device_status.online_since`)
   and resets when the vehicle is set to a non-connected status.
+- Connectivity timeout state is calculated on device reads; there is no background scheduler that
+  proactively writes `DELAYED` or `OFFLINE` while nobody is querying the device.
 - The Event Type filter on the Analytics page filters the table and donut client-side only.
 - Audio is classified synchronously inside `POST /audio`.
 - "Forgot password?" shows a message only; there is no password-reset flow yet.

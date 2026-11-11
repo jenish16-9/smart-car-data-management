@@ -18,6 +18,8 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 60
     bcrypt_rounds: int = 12
+    device_delayed_after_seconds: int = 90
+    device_offline_after_seconds: int = 300
 
     # Development login seed; only applied when environment == "development".
     dev_admin_email: str = ""

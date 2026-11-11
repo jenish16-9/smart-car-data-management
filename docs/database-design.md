@@ -54,6 +54,13 @@ Latest health snapshot, one row per vehicle (unique `vehicle_id`): `microphone_s
 (`monitoring_mode`, `audio_capture_enabled`, `recording`) and `online_since` (start of the current
 connected period; drives the uptime display). Updated whenever telemetry arrives.
 
+### `devices`
+IoT inventory and current state. `id`, `vehicle_id` → `vehicles` (nullable so history survives
+vehicle deletion), `owner_id` → `users`, `hardware_id` (globally unique), `name`,
+`firmware_version`, JSON `configuration`, `state`, `last_heartbeat_at`, `retired_at`, `removed_at`,
+`created_at`, `updated_at`. Device states are `PENDING`, `ONLINE`, `WARNING`, `DELAYED`, `OFFLINE`,
+`DISABLED`, and terminal `RETIRED`.
+
 ## Entity relationships
 
 ```mermaid
@@ -65,6 +72,8 @@ erDiagram
     VEHICLES ||--o{ AUDIO_RECORDS : "records"
     VEHICLES ||--o{ ALERTS : "raises"
     VEHICLES ||--|| DEVICE_STATUS : "reports"
+    VEHICLES ||--o{ DEVICES : "contains"
+    USERS ||--o{ DEVICES : "owns"
     AUDIO_RECORDS |o--o{ ALERTS : "triggers"
     ALERTS ||--o{ ALERT_ACTIONS : "audited by"
     USERS |o--o{ ALERT_ACTIONS : "performs"
@@ -143,10 +152,24 @@ erDiagram
         datetime online_since
         datetime last_sync_at
     }
+    DEVICES {
+        uuid id PK
+        uuid vehicle_id FK
+        uuid owner_id FK
+        string hardware_id UK
+        string name
+        string firmware_version
+        json configuration
+        string state
+        datetime last_heartbeat_at
+        datetime retired_at
+        datetime removed_at
+    }
 ```
 
 Deleting a vehicle removes its assignments, audio records, alerts, alert actions and device
-status (explicit deletes plus `ON DELETE CASCADE`). MongoDB history is intentionally retained.
+status (explicit deletes plus `ON DELETE CASCADE`). Its registered devices are first detached and
+retired so inventory/audit history survives. MongoDB history is intentionally retained.
 
 ## MongoDB collections
 
@@ -159,6 +182,7 @@ and devices can write without a lookup. Timestamps are stored as UTC datetimes.
 | `audio_analysis_results` | `audio_record_id` (PostgreSQL UUID as string), `vehicle_id`, `model_name`, `model_version`, `predicted_class`, `confidence`, `processing_time_ms`, `created_at` |
 | `sensor_events` | `vehicle_id`, `sensor_type`, `value`, `unit`, `timestamp` (derived from each telemetry post) |
 | `device_logs` | `vehicle_id`, `event_type`, `message`, `timestamp` |
+| `device_heartbeats` | `heartbeat_id`, `device_id` (PostgreSQL UUID as string), `vehicle_id` (vehicle code), `health`, `reported_at`, `received_at`, flexible `metrics` |
 
 ## Indexing strategy
 
@@ -168,11 +192,13 @@ and devices can write without a lookup. Timestamps are stored as UTC datetimes.
 | PG | `vehicles.vehicle_code` (unique) | lookup by code |
 | PG | `alerts.vehicle_id`, `alerts.status`, `alerts.detected_at` | per-vehicle lists, active-alert counts, newest-first ordering |
 | PG | `audio_records.vehicle_id`, `device_status.vehicle_id` (unique) | per-vehicle lookups |
+| PG | `devices.hardware_id` (unique), `devices.vehicle_id`, `devices.owner_id` | registration and scoped inventory lookups |
 | PG | FK columns on assignments, sessions, actions | access checks, joins |
 | Mongo | `telemetry_events.vehicle_id`, `.timestamp` | single-field filters |
 | Mongo | `telemetry_events (vehicle_id, timestamp)` | "latest reading" and history range queries |
 | Mongo | `audio_analysis_results.vehicle_id`, `.predicted_class` | analytics grouping and filtering |
 | Mongo | `sensor_events` / `device_logs (vehicle_id, timestamp)` | history queries |
+| Mongo | `device_heartbeats (device_id, received_at)` | newest-first device connectivity history |
 
 Mongo indexes are created idempotently at API startup. For long-running telemetry, consider a TTL
 index or time-series collection to bound storage.
@@ -183,12 +209,18 @@ index or time-series collection to bound storage.
 | --- | --- | --- | --- | --- |
 | User | `POST /auth/register` | `GET /auth/me`, `/users/me` | `PATCH /users/me` | – |
 | Vehicle | `POST /vehicles` (any user; admin may set owner/assignees) | list (scoped), get | `PATCH` (owner/admin) | `DELETE` (owner/admin) |
+| Device | `POST /vehicles/{id}/devices` | per-vehicle list, get, heartbeat history | details, configuration, heartbeat | soft remove / retire |
 | Audio | `POST /audio` (runs the workflow) | list, get (+ analysis) | `PATCH /audio/{id}/status` | – |
 | Alert | `POST /alerts` (manual) or automatically | list (filter by vehicle/status), get (+ actions, analysis) | `acknowledge`, `resolve` (admin) | – |
 | Telemetry | `POST /telemetry/{vehicle}` | history (range + limit), latest | – (append-only) | – |
 
 Access rule everywhere: non-admin users only touch vehicles they own or are assigned to;
 anything else returns `404`. Every write commits in one PostgreSQL transaction in the service layer.
+
+Device records are relational because hardware identity, ownership, unique constraints and current
+state need transactions. Heartbeats are MongoDB documents because they are append-only,
+high-volume, and may carry changing metrics. `device_status` remains the existing vehicle-level
+telemetry snapshot; it is not replaced by the per-hardware `devices` table.
 
 ## Audio-to-alert data flow
 

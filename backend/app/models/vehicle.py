@@ -22,6 +22,9 @@ class Vehicle(Base):
     updated_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow, onupdate=utcnow)
 
     device_status: Mapped["DeviceStatus | None"] = relationship(lazy="joined", uselist=False)
+    devices: Mapped[list["Device"]] = relationship(  # noqa: F821
+        lazy="selectin", back_populates="vehicle", passive_deletes=True
+    )
 
 
 class VehicleAssignment(Base):

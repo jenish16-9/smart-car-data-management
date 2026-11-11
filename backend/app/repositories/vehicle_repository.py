@@ -2,10 +2,13 @@ from uuid import UUID
 
 from sqlalchemy import ColumnElement, func, or_, select
 from sqlalchemy import delete as sql_delete
+from sqlalchemy import update as sql_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.alert import Alert, AlertAction
 from app.models.audio import AudioRecord
+from app.models.common import utcnow
+from app.models.device import Device
 from app.models.device_status import DeviceStatus
 from app.models.user import User
 from app.models.vehicle import Vehicle, VehicleAssignment
@@ -85,6 +88,11 @@ async def update(session: AsyncSession, vehicle: Vehicle, **fields: object) -> V
 
 async def delete(session: AsyncSession, vehicle: Vehicle) -> None:
     """Delete a vehicle and its relational children (explicit, so it also works on SQLite)."""
+    await session.execute(
+        sql_update(Device)
+        .where(Device.vehicle_id == vehicle.id)
+        .values(vehicle_id=None, state="RETIRED", retired_at=utcnow())
+    )
     alert_ids = select(Alert.id).where(Alert.vehicle_id == vehicle.id)
     await session.execute(sql_delete(AlertAction).where(AlertAction.alert_id.in_(alert_ids)))
     for model in (Alert, AudioRecord, DeviceStatus, VehicleAssignment):
