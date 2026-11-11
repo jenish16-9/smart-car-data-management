@@ -164,7 +164,7 @@ All under `/api/v1` and protected by a `Bearer` JWT unless marked public.
 | Auth | `POST /auth/register` (public), `POST /auth/login` (public), `POST /auth/logout`, `GET /auth/me` |
 | Users | `GET /users/me`, `PATCH /users/me` |
 | Vehicles | `POST /vehicles`, `GET /vehicles`, `GET /vehicles/{id}`, `PATCH /vehicles/{id}`, `DELETE /vehicles/{id}`, `POST /vehicles/{id}/devices`, `GET /vehicles/{id}/devices`, `PATCH /vehicles/{id}/controls`, `GET /vehicles/{id}/logs` |
-| Devices | `GET /devices/{id}`, `PATCH /devices/{id}`, `PUT /devices/{id}/configuration`, `POST /devices/{id}/heartbeat`, `GET /devices/{id}/heartbeats`, `DELETE /devices/{id}` |
+| Devices | `GET /devices/{id}`, `PATCH /devices/{id}`, `PUT /devices/{id}/configuration`, `POST /devices/{id}/heartbeat`, `GET /devices/{id}/heartbeats`, `POST /devices/{id}/classify-audio`, `DELETE /devices/{id}` |
 | Audio | `POST /audio`, `GET /audio`, `GET /audio/{id}`, `PATCH /audio/{id}/status` |
 | Alerts | `POST /alerts`, `GET /alerts`, `GET /alerts/{id}`, `POST /alerts/{id}/acknowledge`, `POST /alerts/{id}/resolve` |
 | Telemetry | `POST /telemetry/{vehicle}`, `GET /telemetry/{vehicle}`, `GET /telemetry/{vehicle}/latest` |
@@ -201,6 +201,17 @@ heartbeat changes an active device to `DELAYED` and then `OFFLINE`. A valid hear
 active device to `ONLINE` (or `WARNING` for a health warning), but never reactivates `DISABLED` or
 `RETIRED`. Retirement is terminal and rejects configuration changes and new heartbeats.
 
+The selected device in the Vehicles & IoT Devices page also has a **Simulate audio event** form.
+It uploads a PCM WAV (10 MB maximum) to the configured classifier and writes only the prediction
+metadata to MongoDB; the uploaded bytes are not retained. Every response is explicitly marked
+`isSimulation: true`, and disabled or retired devices reject the upload.
+
+```bash
+curl -X POST http://localhost:8000/api/v1/devices/DEVICE_UUID/classify-audio \
+  -H "Authorization: Bearer $TOKEN" \
+  -F "audio=@sample.wav;type=audio/wav" -F "location=Parking garage"
+```
+
 ## Audio → alert workflow
 
 1. `POST /audio` creates the audio metadata (PostgreSQL `audio_records`).
@@ -228,9 +239,12 @@ FastAPI dependency overrides, so they never connect to (or delete) a real databa
 
 ## Future ML model integration
 
-`backend/app/services/audio_classifier.py` currently contains a **mock classifier**. It does
-not analyse audio: it returns a deterministic placeholder label from a hash, so the pipeline can
-be built and tested. **It is not a trained model and must not be used for real detection.** The
+`backend/app/services/audio_classifier.py` defaults to a **mock classifier**. It does not analyse
+audio: it returns a deterministic placeholder label from a hash, so the pipeline can be built and
+tested. **It must not be used for real detection.** Set `AUDIO_CLASSIFIER_BACKEND=sklearn` and
+`AUDIO_MODEL_PATH=ml_artifacts/audio-baseline.joblib` to run the locally trained demo artifact. The
+baseline is for demonstrations only; its measured held-out results and unsupported-class limits are
+recorded in [docs/audio-model.md](docs/audio-model.md). The
 replaceable `AudioClassifier` protocol accepts `AudioClassificationInput` containing exactly one
 storage URI, raw audio byte sequence, or extracted numeric feature map. It returns an
 `AudioClassificationResult` with `event_type`, `confidence`, `model_version`, and a timezone-aware

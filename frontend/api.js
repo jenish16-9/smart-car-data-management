@@ -45,7 +45,7 @@ function errorMessage(body) {
 }
 
 async function apiRequest(path, options = {}) {
-  const headers = { 'Content-Type': 'application/json', ...(options.headers || {}) };
+  const headers = { ...(options.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }), ...(options.headers || {}) };
   const token = tokenStore.get();
   if (token) headers.Authorization = `Bearer ${token}`;
 
@@ -98,6 +98,12 @@ export const api = {
   heartbeat: (id, heartbeat) => post(`/devices/${encodeURIComponent(id)}/heartbeat`, heartbeat),
   deviceHeartbeats: (id, params) => apiRequest(`/devices/${encodeURIComponent(id)}/heartbeats${queryString(params)}`),
   removeDevice: (id) => apiRequest(`/devices/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  classifyDeviceAudio: (id, audio, location = '') => {
+    const body = new FormData();
+    body.append('audio', audio);
+    if (location) body.append('location', location);
+    return apiRequest(`/devices/${encodeURIComponent(id)}/classify-audio`, { method: 'POST', body });
+  },
 
   // Audio
   audio: (params) => apiRequest(`/audio${queryString(params)}`),

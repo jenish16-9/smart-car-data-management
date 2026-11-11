@@ -1,8 +1,10 @@
-from fastapi import APIRouter, Depends, Query, Response, status
+from fastapi import APIRouter, Depends, File, Form, Query, Response, UploadFile, status
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.dependencies import get_current_user
+from app.core.errors import UnprocessableError
 from app.db.mongodb import get_mongo_db
 from app.db.postgres import get_session
 from app.models.user import User
@@ -13,6 +15,7 @@ from app.schemas.device import (
     HeartbeatCreate,
     HeartbeatRecord,
     HeartbeatResponse,
+    SimulatedAudioEvent,
 )
 from app.services import device_service
 
@@ -78,3 +81,29 @@ async def remove_device(
 ) -> Response:
     await device_service.remove_device(session, user, device_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/{device_id}/classify-audio", response_model=SimulatedAudioEvent)
+async def classify_audio(
+    device_id: str,
+    audio: UploadFile = File(...),
+    location: str | None = Form(default=None, max_length=200),
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+    mongo: AsyncIOMotorDatabase = Depends(get_mongo_db),
+) -> SimulatedAudioEvent:
+    """Run the configured classifier on a demo PCM WAV uploaded from a device."""
+    filename = (audio.filename or "").lower()
+    if not filename.endswith(".wav"):
+        raise UnprocessableError("Only .wav audio files are supported")
+    audio_bytes = await audio.read(settings.audio_upload_max_bytes + 1)
+    await audio.close()
+    if not audio_bytes:
+        raise UnprocessableError("Audio file cannot be empty")
+    if len(audio_bytes) > settings.audio_upload_max_bytes:
+        raise UnprocessableError(f"Audio file exceeds the {settings.audio_upload_max_bytes // 1_000_000} MB limit")
+    if not audio_bytes.startswith(b"RIFF") or audio_bytes[8:12] != b"WAVE":
+        raise UnprocessableError("Audio file must be a valid WAV container")
+    return await device_service.classify_simulated_audio(
+        session, mongo, user, device_id, audio_bytes, location=location or None
+    )

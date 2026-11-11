@@ -8,6 +8,7 @@ alembic>=1.14,<2
 motor>=3.6,<4
 PyJWT>=2.9,<3
 bcrypt>=4.2,<6
+python-multipart>=0.0.20,<1
 
 # test-only
 pytest>=8,<10

@@ -94,3 +94,19 @@ class HeartbeatRecord(BaseModel):
 
 class HeartbeatResponse(HeartbeatRecord):
     device_state: DeviceState
+
+
+class SimulatedAudioEvent(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    event_id: UUID = Field(alias="eventId")
+    vehicle_id: str = Field(alias="vehicleId")
+    device_id: UUID = Field(alias="deviceId")
+    event_type: str = Field(alias="eventType")
+    confidence: float = Field(ge=0, le=1)
+    severity: str | None = None
+    timestamp: datetime
+    location: str | None = None
+    is_simulation: bool = Field(default=True, alias="isSimulation")
+    model_version: str = Field(alias="modelVersion")
+    processing_timestamp: datetime = Field(alias="processingTimestamp")

@@ -5,11 +5,11 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.core.errors import ConflictError, ForbiddenError, NotFoundError
+from app.core.errors import ConflictError, ForbiddenError, NotFoundError, UnprocessableError
 from app.models.common import utcnow
 from app.models.device import Device
 from app.models.user import User
-from app.repositories import device_repository, telemetry_repository, vehicle_repository
+from app.repositories import analysis_repository, device_repository, telemetry_repository, vehicle_repository
 from app.schemas.device import (
     DeviceConfigurationUpdate,
     DeviceCreate,
@@ -17,8 +17,9 @@ from app.schemas.device import (
     HeartbeatCreate,
     HeartbeatRecord,
     HeartbeatResponse,
+    SimulatedAudioEvent,
 )
-from app.services import vehicle_service
+from app.services import alert_service, audio_classifier, vehicle_service
 
 TERMINAL_STATES = {"DISABLED", "RETIRED"}
 
@@ -172,3 +173,57 @@ async def remove_device(session: AsyncSession, user: User, device_id: str) -> No
     device.retired_at = device.retired_at or now
     device.removed_at = now
     await session.commit()
+
+
+async def classify_simulated_audio(
+    session: AsyncSession,
+    mongo: AsyncIOMotorDatabase,
+    user: User,
+    device_id: str,
+    audio_bytes: bytes,
+    *,
+    location: str | None = None,
+) -> SimulatedAudioEvent:
+    """Classify an uploaded demo WAV and preserve its prediction as event history."""
+    device = await get_accessible(session, user, device_id)
+    if device.state in TERMINAL_STATES:
+        raise ConflictError(f"{device.state.title()} device rejects audio event data")
+    if device.vehicle is None:
+        raise ConflictError("Device is not associated with a vehicle")
+    try:
+        result = audio_classifier.classify_audio(audio_bytes)
+    except (RuntimeError, ValueError) as exc:
+        raise UnprocessableError(f"Audio classification failed: {exc}") from exc
+
+    event_id = uuid4()
+    timestamp = utcnow()
+    severity = alert_service.SEVERITY_BY_CLASS.get(result.event_type)
+    document = {
+        "audio_record_id": str(event_id),
+        "event_id": str(event_id),
+        "vehicle_id": device.vehicle.vehicle_code,
+        "device_id": str(device.id),
+        "predicted_class": result.event_type,
+        "confidence": result.confidence,
+        "severity": severity,
+        "timestamp": timestamp,
+        "location": location,
+        "is_simulation": True,
+        "model_version": result.model_version,
+        "processing_timestamp": result.processing_timestamp,
+        "created_at": timestamp,
+    }
+    await analysis_repository.insert_result(mongo, document)
+    return SimulatedAudioEvent(
+        eventId=event_id,
+        vehicleId=device.vehicle.vehicle_code,
+        deviceId=device.id,
+        eventType=result.event_type,
+        confidence=result.confidence,
+        severity=severity,
+        timestamp=timestamp,
+        location=location,
+        isSimulation=True,
+        modelVersion=result.model_version,
+        processingTimestamp=result.processing_timestamp,
+    )

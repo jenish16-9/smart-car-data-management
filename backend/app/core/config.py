@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     device_offline_after_seconds: int = 300
     audio_classifier_backend: str = "mock"
     audio_model_path: str = "ml_artifacts/audio-baseline.joblib"
+    audio_upload_max_bytes: int = 10_000_000
 
     # Development login seed; only applied when environment == "development".
     dev_admin_email: str = ""
