@@ -3,18 +3,42 @@ from datetime import datetime
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.errors import NotFoundError
+from app.core.errors import ConflictError, NotFoundError
 from app.models.common import utcnow
+from app.models.device import Device
 from app.models.user import User
-from app.repositories import telemetry_repository, vehicle_repository
+from app.repositories import device_repository, telemetry_repository, vehicle_repository
 from app.schemas.telemetry import TelemetryCreate, TelemetryOut
 from app.services import vehicle_service
+from app.services.device_rules import default_device
 
 ENGINE_WARNING_CELSIUS = 110.0
 
 
-async def _sync_device_status(session: AsyncSession, vehicle, payload: TelemetryCreate, timestamp: datetime) -> bool:
+async def _resolve_device(session: AsyncSession, vehicle, payload: TelemetryCreate) -> Device | None:
+    """The explicit device if given (must belong to the vehicle and not be retired), else the default one."""
+    if payload.device_id is None:
+        return default_device(vehicle)
+    device = await device_repository.get(session, payload.device_id)
+    if device is None or device.vehicle_id != vehicle.id:
+        raise NotFoundError("Device not found on this vehicle")
+    if device.status == "RETIRED":
+        raise ConflictError("Device is retired and does not accept telemetry")
+    return device
+
+
+async def _sync_device_status(
+    session: AsyncSession, vehicle, payload: TelemetryCreate, timestamp: datetime, device: Device | None
+) -> bool:
     """Keep the PostgreSQL snapshot (vehicle + device_status) in step with new telemetry."""
+    if device is not None and device.status != "DISABLED":
+        device.last_seen_at = timestamp
+        if payload.battery_level is not None:
+            device.battery_level = payload.battery_level
+        if device.status == "DELAYED":
+            device.status = "ACTIVE"
+        if device.status in ("ACTIVE", "WARNING") and device.online_since is None:
+            device.online_since = timestamp
     device = vehicle.device_status
     device.last_sync_at = timestamp
     device.microphone_status = device.microphone_status if device.microphone_status != "offline" else "online"
@@ -27,6 +51,10 @@ async def _sync_device_status(session: AsyncSession, vehicle, payload: Telemetry
     was_connected = vehicle.status == "connected"
     if not was_connected or device.online_since is None:
         device.online_since = timestamp
+    if not was_connected:
+        for registered in vehicle.devices:
+            if registered.status in ("ACTIVE", "WARNING") and registered.online_since is None:
+                registered.online_since = timestamp
     await vehicle_repository.update(session, vehicle, last_seen_at=timestamp, status="connected")
     await session.commit()
     return was_connected
@@ -37,11 +65,15 @@ async def ingest(
 ) -> TelemetryOut:
     vehicle = await vehicle_service.get_accessible(session, user, ref)
     timestamp = payload.timestamp or utcnow()
+    explicit = payload.device_id is not None
+    device = await _resolve_device(session, vehicle, payload)
     document = {
         "vehicle_id": vehicle.vehicle_code,
         "timestamp": timestamp,
-        **payload.model_dump(exclude={"timestamp"}, exclude_none=True),
+        **payload.model_dump(exclude={"timestamp", "device_id"}, exclude_none=True),
     }
+    if device is not None and explicit:
+        document.update(device_id=str(device.id), hardware_id=device.hardware_id)
     await telemetry_repository.insert_telemetry(mongo, document)
 
     sensors = []
@@ -58,11 +90,12 @@ async def ingest(
                 "value": value,
                 "unit": unit,
                 "timestamp": timestamp,
+                **({"device_id": str(device.id), "hardware_id": device.hardware_id} if device and explicit else {}),
             }
             for kind, value, unit in sensors
         ],
     )
-    if not await _sync_device_status(session, vehicle, payload, timestamp):
+    if not await _sync_device_status(session, vehicle, payload, timestamp, device):
         await telemetry_repository.insert_device_log(
             mongo,
             vehicle_code=vehicle.vehicle_code,

@@ -24,7 +24,7 @@ async def create_device(
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> DeviceOut:
-    return DeviceOut.model_validate(await device_service.create_device(session, user, vehicle_id, payload))
+    return await device_service.create_device(session, user, vehicle_id, payload)
 
 
 @router.get("/{vehicle_id}/devices", response_model=list[DeviceOut])
@@ -33,8 +33,7 @@ async def list_devices(
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> list[DeviceOut]:
-    devices = await device_service.list_devices(session, user, vehicle_id)
-    return [DeviceOut.model_validate(device) for device in devices]
+    return await device_service.list_vehicle_devices(session, user, vehicle_id)
 
 
 @router.post("", response_model=VehicleOut, status_code=status.HTTP_201_CREATED)
@@ -48,10 +47,13 @@ async def create_vehicle(
 async def list_vehicles(
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
+    include_inactive: bool = Query(False, description="Administrators only: include deactivated vehicles."),
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> list[VehicleOut]:
-    vehicles = await vehicle_service.list_vehicles(session, user, limit=limit, offset=offset)
+    vehicles = await vehicle_service.list_vehicles(
+        session, user, limit=limit, offset=offset, include_inactive=include_inactive
+    )
     return [VehicleOut.from_model(vehicle) for vehicle in vehicles]
 
 
@@ -76,7 +78,7 @@ async def update_vehicle(
 async def delete_vehicle(
     vehicle_id: str, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)
 ) -> Response:
-    await vehicle_service.delete_vehicle(session, user, vehicle_id)
+    await vehicle_service.deactivate_vehicle(session, user, vehicle_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 

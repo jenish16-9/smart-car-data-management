@@ -87,6 +87,8 @@ export const api = {
   updateVehicle: (id, vehicle) => apiRequest(`/vehicles/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(vehicle) }),
   removeVehicle: (id) => apiRequest(`/vehicles/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   updateControls: (id, controls) => apiRequest(`/vehicles/${encodeURIComponent(id)}/controls`, { method: 'PATCH', body: JSON.stringify(controls) }),
+  devices: (params) => apiRequest(`/devices${queryString(params)}`),
+  updateDeviceControls: (id, controls) => apiRequest(`/devices/${encodeURIComponent(id)}/status`, { method: 'PATCH', body: JSON.stringify(controls) }),
   deviceLogs: (id, params) => apiRequest(`/vehicles/${encodeURIComponent(id)}/logs${queryString(params)}`),
 
   // Registered IoT devices
