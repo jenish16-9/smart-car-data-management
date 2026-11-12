@@ -1,15 +1,18 @@
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, Header, Query, Response, status
+from fastapi import APIRouter, Depends, File, Form, Header, Query, Response, UploadFile, status
 from fastapi.security import HTTPAuthorizationCredentials
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.dependencies import get_auth_context, get_current_user, optional_bearer
+from app.core.errors import UnprocessableError
 from app.db.mongodb import get_mongo_db
 from app.db.postgres import get_session
 from app.models.user import User
 from app.schemas.device import (
+    DeviceConfigurationUpdate,
     DeviceControlState,
     DeviceControlsUpdate,
     DeviceCreate,
@@ -19,6 +22,7 @@ from app.schemas.device import (
     DeviceUpdate,
     HeartbeatCreate,
     HeartbeatOut,
+    SimulatedAudioEvent,
 )
 from app.services import device_service
 
@@ -70,6 +74,16 @@ async def update_device(
     session: AsyncSession = Depends(get_session),
 ) -> DeviceOut:
     return await device_service.update(session, user, device_id, payload)
+
+
+@router.put("/{device_id}/configuration", response_model=DeviceOut)
+async def update_configuration(
+    device_id: str,
+    payload: DeviceConfigurationUpdate,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> DeviceOut:
+    return await device_service.update_configuration(session, user, device_id, payload)
 
 
 @router.delete("/{device_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -164,3 +178,28 @@ async def list_heartbeats(
         session, user, device_id, start=start, end=end, limit=limit, offset=offset
     )
     return [HeartbeatOut.from_model(beat) for beat in beats]
+
+
+@router.post("/{device_id}/classify-audio", response_model=SimulatedAudioEvent)
+async def classify_audio(
+    device_id: str,
+    audio: UploadFile = File(...),
+    location: str | None = Form(default=None, max_length=200),
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+    mongo: AsyncIOMotorDatabase = Depends(get_mongo_db),
+) -> SimulatedAudioEvent:
+    filename = (audio.filename or "").lower()
+    if not filename.endswith(".wav"):
+        raise UnprocessableError("Only .wav audio files are supported")
+    audio_bytes = await audio.read(settings.audio_upload_max_bytes + 1)
+    await audio.close()
+    if not audio_bytes:
+        raise UnprocessableError("Audio file cannot be empty")
+    if len(audio_bytes) > settings.audio_upload_max_bytes:
+        raise UnprocessableError(f"Audio file exceeds the {settings.audio_upload_max_bytes // 1_000_000} MB limit")
+    if not audio_bytes.startswith(b"RIFF") or audio_bytes[8:12] != b"WAVE":
+        raise UnprocessableError("Audio file must be a valid WAV container")
+    return await device_service.classify_simulated_audio(
+        session, mongo, user, device_id, audio_bytes, location=location or None
+    )

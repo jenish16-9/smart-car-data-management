@@ -53,6 +53,11 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 60
     bcrypt_rounds: int = 12
+    device_delayed_after_seconds: int = 90
+    device_offline_after_seconds: int = 300
+    audio_classifier_backend: str = "mock"
+    audio_model_path: str = "ml_artifacts/audio-baseline.joblib"
+    audio_upload_max_bytes: int = 10_000_000
 
     # Development login seed; only applied when environment == "development".
     dev_admin_email: str = ""

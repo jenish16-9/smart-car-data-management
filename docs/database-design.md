@@ -2,7 +2,7 @@
 
 The system uses two databases, each for what it does best.
 
-- **PostgreSQL** – relational and transactional data (accounts, vehicles, alerts, audit trail).
+- **PostgreSQL** – relational and transactional data (accounts, vehicles, devices, heartbeat history, alerts, audit trail).
 - **MongoDB** – high-volume, flexible, time-series-like data (telemetry, ML output, logs).
 - **Object storage (S3 / MinIO)** – audio files. Databases hold only the URL and metadata.
 
@@ -25,7 +25,8 @@ One row per issued token; its `id` is the JWT `jti`. `expires_at`, `revoked_at`.
 sets `revoked_at`, so a stolen token stops working immediately.
 
 ### `vehicles`
-`id`, `vehicle_code` (unique, indexed, e.g. `CAR-1024`), `vehicle_type`, `status`
+`id`, `vehicle_code` (unique, indexed, e.g. `CAR-1024`), `vehicle_type`, optional unique `vin` and
+`license_plate`, `status`
 (`connected` / `disconnected` / `maintenance`), `owner_id` → `users`, `last_seen_at`,
 `created_at`, `updated_at`.
 
@@ -42,7 +43,7 @@ sets `revoked_at`, so a stolen token stops working immediately.
 `id`, `vehicle_id` → `vehicles` (indexed), `audio_record_id` → `audio_records` (nullable),
 `event_type`, `severity` (`low` / `medium` / `high` / `critical`), `confidence` (0–1),
 `status` (`open` / `acknowledged` / `resolved`, indexed), `location`, `detected_at` (indexed),
-`reviewed_at`, `resolved_at`.
+`reviewed_at`, `resolved_at`, `is_simulation`, and optional `simulation_event_id`.
 
 ### `alert_actions`
 Audit trail. `id`, `alert_id` → `alerts` (indexed), `user_id` → `users` (null for system-created),
@@ -82,7 +83,8 @@ into DELAYED. DISABLED and RETIRED are only changed by an administrator. Retired
 **Soft deletion**: `vehicles` gained `is_active` and `deleted_at`; `DELETE /vehicles/{id}` and `DELETE /devices/{id}`
 never remove rows. `alerts.vehicle_id`, `audio_records.vehicle_id`, `devices.vehicle_id` and
 `device_heartbeats.device_id` use `ON DELETE RESTRICT`, so historical records cannot be lost by deleting a vehicle row.
-`vehicle_code` (unique) and `vehicle_type` were already columns of `vehicles`.
+`vehicle_code` (unique) and `vehicle_type` remain stable; migration `0006` adds optional unique VIN and license-plate
+identifiers plus simulated-alert provenance. Migration `0005` is the shared-cloud device-schema compatibility bridge.
 
 **MongoDB**: `telemetry_events`, `sensor_events` and `device_logs` documents may carry `device_id` and `hardware_id` in
 addition to `vehicle_id` (older documents remain valid). New indexes: `(device_id, timestamp)` and sparse `hardware_id`.
@@ -178,9 +180,8 @@ erDiagram
     }
 ```
 
-Deleting a vehicle removes its assignments, audio records, alerts, alert actions and device
-status. Vehicles are no longer hard-deleted: the API performs a soft delete (`is_active=false`, `deleted_at`) and keeps
-every related record. MongoDB history is intentionally retained.
+Vehicles are not hard-deleted: the API performs a soft delete (`is_active=false`, `deleted_at`) and keeps assignments,
+devices, heartbeat history, audio records, alerts, alert actions, and device status. MongoDB history is intentionally retained.
 
 ## MongoDB collections
 
@@ -190,7 +191,7 @@ and devices can write without a lookup. Timestamps are stored as UTC datetimes.
 | Collection | Document |
 | --- | --- |
 | `telemetry_events` | `vehicle_id`, `timestamp`, `location{latitude, longitude}`, `speed`, `engine_temperature`, `battery_level`, `gps_status` |
-| `audio_analysis_results` | `audio_record_id` (PostgreSQL UUID as string), `vehicle_id`, `model_name`, `model_version`, `predicted_class`, `confidence`, `processing_time_ms`, `created_at` |
+| `audio_analysis_results` | `audio_record_id` or `event_id`, `vehicle_id`, optional `device_id`, `model_name`, `model_version`, `predicted_class`, `confidence`, `processing_time_ms`, `is_simulation`, `created_at` |
 | `sensor_events` | `vehicle_id`, `sensor_type`, `value`, `unit`, `timestamp` (derived from each telemetry post) |
 | `device_logs` | `vehicle_id`, `event_type`, `message`, `timestamp` |
 
@@ -216,7 +217,8 @@ index or time-series collection to bound storage.
 | Resource | Create | Read | Update | Delete |
 | --- | --- | --- | --- | --- |
 | User | `POST /auth/register` | `GET /auth/me`, `/users/me` | `PATCH /users/me` | – |
-| Vehicle | `POST /vehicles` (any user; admin may set owner/assignees) | list (scoped), get | `PATCH` (owner/admin) | `DELETE` (owner/admin) |
+| Vehicle | `POST /vehicles` (any user; admin may set owner/assignees) | list (scoped), get | `PATCH` (owner/admin) | `DELETE` soft delete (owner/admin) |
+| Device | `POST /devices` (admin) or nested vehicle registration | scoped list, detail, heartbeat history | settings, status, controls, heartbeat | `DELETE` retires and preserves history |
 | Audio | `POST /audio` (runs the workflow) | list, get (+ analysis) | `PATCH /audio/{id}/status` | – |
 | Alert | `POST /alerts` (manual) or automatically | list (filter by vehicle/status), get (+ actions, analysis) | `acknowledge`, `resolve` (admin) | – |
 | Telemetry | `POST /telemetry/{vehicle}` | history (range + limit), latest | – (append-only) | – |

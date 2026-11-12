@@ -12,12 +12,17 @@ from app.core.errors import ServiceError
 from app.db.init_db import init_db
 from app.db.mongodb import close_mongo
 from app.db.postgres import dispose_engine
+from app.services import audio_classifier
 
 logger = logging.getLogger("app")
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    try:
+        audio_classifier.configure_default_classifier(settings.audio_classifier_backend, settings.audio_model_path)
+    except Exception as exc:
+        logger.error("Audio classifier initialisation failed (%s)", exc)
     try:
         await init_db()
     except Exception as exc:  # keep the API (and /health) up so the problem is visible

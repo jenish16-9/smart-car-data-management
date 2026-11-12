@@ -44,15 +44,15 @@ async def _process(
         "vehicle_id": audio.vehicle.vehicle_code,
         "model_name": result.model_name,
         "model_version": result.model_version,
-        "predicted_class": result.predicted_class,
+        "predicted_class": result.event_type,
         "confidence": result.confidence,
         "processing_time_ms": result.processing_time_ms,
-        "created_at": utcnow(),
+        "created_at": result.processing_timestamp,
     }
     await analysis_repository.insert_result(mongo, document)
 
     alert_id = None
-    if alert_service.should_raise_alert(result.predicted_class, result.confidence):
+    if alert_service.should_raise_alert(result.event_type, result.confidence):
         alert = await alert_service.create_from_classification(
             session, vehicle_id=audio.vehicle_id, audio_record_id=audio.id, analysis=document
         )

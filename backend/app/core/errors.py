@@ -23,3 +23,7 @@ class ConflictError(ServiceError):
 
 class UnauthorizedError(ServiceError):
     status_code = 401
+
+
+class UnprocessableError(ServiceError):
+    status_code = 422

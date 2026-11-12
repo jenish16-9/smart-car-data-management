@@ -1,6 +1,6 @@
 ALERT = {
     "vehicle_id": "CAR-1024",
-    "event_type": "glass_break",
+    "event_type": "glass_breaking",
     "severity": "high",
     "confidence": 0.94,
     "location": "Front Right",

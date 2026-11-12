@@ -1,12 +1,20 @@
 import pytest
 
+from app.models.common import utcnow
 from app.services import audio_classifier
 from app.services.audio_classifier import AudioClassificationResult
 
 
 def _fake(predicted: str, confidence: float):
     def classify(audio_path: str) -> AudioClassificationResult:
-        return AudioClassificationResult(predicted, confidence, "test-model", "t-1", 12)
+        return AudioClassificationResult(
+            event_type=predicted,
+            confidence=confidence,
+            model_version="t-1",
+            processing_timestamp=utcnow(),
+            model_name="test-model",
+            processing_time_ms=12,
+        )
 
     return classify
 
@@ -24,21 +32,21 @@ def _audio(**overrides):
 
 
 async def test_confident_detection_creates_alert(client, admin_headers, vehicle, mongo_db, monkeypatch):
-    monkeypatch.setattr(audio_classifier, "classify_audio", _fake("glass_break", 0.91))
+    monkeypatch.setattr(audio_classifier, "classify_audio", _fake("glass_breaking", 0.91))
     response = await client.post("/audio", json=_audio(), headers=admin_headers)
     assert response.status_code == 201, response.text
     body = response.json()
     assert body["processing_status"] == "completed"
-    assert body["analysis"]["predicted_class"] == "glass_break" and body["alert_id"]
+    assert body["analysis"]["predicted_class"] == "glass_breaking" and body["alert_id"]
     assert await mongo_db["audio_analysis_results"].count_documents({"audio_record_id": body["id"]}) == 1
 
     alert = (await client.get(f"/alerts/{body['alert_id']}", headers=admin_headers)).json()
-    assert alert["event_type"] == "glass_break" and alert["severity"] == "high"
+    assert alert["event_type"] == "glass_breaking" and alert["severity"] == "high"
     assert alert["audio_record_id"] == body["id"] and alert["analysis"]["model_name"] == "test-model"
     assert alert["actions"][0]["action_type"] == "created"
 
 
-@pytest.mark.parametrize(("predicted", "confidence"), [("normal", 0.99), ("engine_noise", 0.79)])
+@pytest.mark.parametrize(("predicted", "confidence"), [("normal", 0.99), ("abnormal_engine_noise", 0.79)])
 async def test_no_alert_for_normal_or_low_confidence(
     client, admin_headers, vehicle, monkeypatch, predicted, confidence
 ):
@@ -49,7 +57,7 @@ async def test_no_alert_for_normal_or_low_confidence(
 
 
 async def test_threshold_is_inclusive(client, admin_headers, vehicle, monkeypatch):
-    monkeypatch.setattr(audio_classifier, "classify_audio", _fake("horn", 0.80))
+    monkeypatch.setattr(audio_classifier, "classify_audio", _fake("emergency_vehicle_siren", 0.80))
     assert (await client.post("/audio", json=_audio(), headers=admin_headers)).json()["alert_id"]
 
 

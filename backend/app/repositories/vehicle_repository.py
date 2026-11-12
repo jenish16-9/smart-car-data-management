@@ -29,6 +29,14 @@ async def get_by_ref(session: AsyncSession, ref: str) -> Vehicle | None:
     return result.scalar_one_or_none()
 
 
+async def get_by_vin(session: AsyncSession, vin: str) -> Vehicle | None:
+    return (await session.execute(select(Vehicle).where(Vehicle.vin == vin))).scalar_one_or_none()
+
+
+async def get_by_license_plate(session: AsyncSession, license_plate: str) -> Vehicle | None:
+    return (await session.execute(select(Vehicle).where(Vehicle.license_plate == license_plate))).scalar_one_or_none()
+
+
 async def list_for_user(
     session: AsyncSession, user: User, *, limit: int, offset: int, include_inactive: bool = False
 ) -> list[Vehicle]:

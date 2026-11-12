@@ -10,6 +10,18 @@ from app.models.vehicle import Vehicle
 from app.repositories.vehicle_repository import accessible_condition
 
 
+def parse_uuid(value: str) -> UUID | None:
+    try:
+        return UUID(value)
+    except ValueError:
+        return None
+
+
+async def get_by_id(session: AsyncSession, device_id: str) -> Device | None:
+    parsed = parse_uuid(device_id)
+    return await get(session, parsed) if parsed else None
+
+
 async def get(session: AsyncSession, device_id: UUID) -> Device | None:
     query = select(Device).where(Device.id == device_id).execution_options(populate_existing=True)
     return (await session.execute(query)).scalar_one_or_none()
@@ -50,10 +62,24 @@ async def list_for_user(
 
 
 async def create(session: AsyncSession, **fields: object) -> Device:
+    fields.setdefault("device_name", fields.get("hardware_id"))
     device = Device(**fields)
     session.add(device)
     await session.flush()
     return device
+
+
+async def refresh(session: AsyncSession, device: Device) -> Device:
+    await session.refresh(device)
+    return device
+
+
+async def list_for_vehicle(session: AsyncSession, vehicle_id: UUID, *, include_removed: bool = False) -> list[Device]:
+    query = select(Device).where(Device.vehicle_id == vehicle_id)
+    if not include_removed:
+        query = query.where(Device.removed_at.is_(None), Device.status != "RETIRED")
+    result = await session.execute(query.order_by(Device.created_at.desc()))
+    return list(result.scalars().all())
 
 
 async def mark_stale_delayed(session: AsyncSession, cutoff: datetime) -> int:

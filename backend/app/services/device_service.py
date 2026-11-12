@@ -4,18 +4,26 @@ import hashlib
 import hmac
 import secrets
 from datetime import datetime
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.errors import ConflictError, ForbiddenError, NotFoundError
+from app.core.errors import ConflictError, ForbiddenError, NotFoundError, UnprocessableError
 from app.models.common import utcnow
 from app.models.device import Device, DeviceHeartbeat
 from app.models.user import User
-from app.repositories import device_repository, telemetry_repository, vehicle_repository
-from app.schemas.device import DeviceControlsUpdate, DeviceCreate, DeviceOut, DeviceUpdate, HeartbeatCreate
-from app.services import vehicle_service
+from app.repositories import analysis_repository, device_repository, telemetry_repository, vehicle_repository
+from app.schemas.device import (
+    DeviceConfigurationUpdate,
+    DeviceControlsUpdate,
+    DeviceCreate,
+    DeviceOut,
+    DeviceUpdate,
+    HeartbeatCreate,
+    SimulatedAudioEvent,
+)
+from app.services import alert_service, audio_classifier, vehicle_service
 from app.services.device_rules import ONLINE_STATUSES, require_controllable, stale_cutoff, status_after_heartbeat
 
 
@@ -66,16 +74,22 @@ async def _to_out(session: AsyncSession, device: Device, vehicle_code: str, *, d
 
 async def register(session: AsyncSession, user: User, payload: DeviceCreate) -> tuple[DeviceOut, str]:
     _require_admin(user)
+    if payload.vehicle_id is None:
+        raise ConflictError("vehicle_id is required")
     vehicle = await vehicle_service.get_accessible(session, user, payload.vehicle_id)
     if await device_repository.get_by_hardware_id(session, payload.hardware_id):
         raise ConflictError(f"Hardware ID {payload.hardware_id} is already registered")
     key = f"dk_{secrets.token_urlsafe(32)}"
+    fields = payload.model_dump(exclude={"vehicle_id"})
+    fields["device_name"] = fields.get("device_name") or payload.hardware_id
     device = await device_repository.create(
         session,
         vehicle_id=vehicle.id,
+        owner_id=vehicle.owner_id or user.id,
         status="PENDING",  # becomes ACTIVE on its first valid heartbeat
         api_key_hash=_hash_key(key),
-        **payload.model_dump(exclude={"vehicle_id"}),
+        configuration={},
+        **fields,
     )
     await session.commit()
     return await _to_out(session, await _load(session, str(device.id)), vehicle.vehicle_code), key
@@ -174,7 +188,7 @@ async def update_controls(
 
 
 async def _verify_identity(device: Device, payload: HeartbeatCreate) -> None:
-    if not hmac.compare_digest(device.hardware_id, payload.hardware_id):
+    if payload.hardware_id is not None and not hmac.compare_digest(device.hardware_id, payload.hardware_id):
         raise ForbiddenError("Hardware ID does not match this device")
 
 
@@ -205,24 +219,27 @@ async def heartbeat(
 
     now = utcnow()
     was_online = device.status in ONLINE_STATUSES
+    heartbeat_status = "warning" if payload.health == "WARNING" else payload.heartbeat_status
+    metrics = {**payload.metrics, **(payload.metadata or {})}
+    battery_level = payload.battery_level if payload.battery_level is not None else metrics.get("batteryPercent")
     await device_repository.add_heartbeat(
         session,
         device_id=device.id,
         received_at=now,
-        heartbeat_status=payload.heartbeat_status,
-        battery_level=payload.battery_level,
+        heartbeat_status=heartbeat_status,
+        battery_level=battery_level,
         signal_strength=payload.signal_strength,
         firmware_version=payload.firmware_version,
         latitude=payload.latitude,
         longitude=payload.longitude,
-        extra=payload.metadata,
+        extra=metrics,
     )
     device.last_seen_at = now
-    if payload.battery_level is not None:
-        device.battery_level = payload.battery_level
+    if battery_level is not None:
+        device.battery_level = battery_level
     if payload.firmware_version:
         device.firmware_version = payload.firmware_version
-    new_status = status_after_heartbeat(device.status, payload.heartbeat_status, payload.battery_level)
+    new_status = status_after_heartbeat(device.status, heartbeat_status, battery_level)
     device.status = new_status  # unchanged for DISABLED
     if new_status in ONLINE_STATUSES and not was_online:
         device.online_since = now
@@ -252,3 +269,122 @@ async def list_heartbeats(
 ) -> list[DeviceHeartbeat]:
     device, _ = await get_accessible(session, user, device_id)
     return await device_repository.list_heartbeats(session, device.id, start=start, end=end, limit=limit, offset=offset)
+
+
+async def create_device(session: AsyncSession, user: User, vehicle_ref: str, payload: DeviceCreate) -> DeviceOut:
+    """Vehicle-scoped registration used by the management UI; administrators only."""
+    _require_admin(user)
+    vehicle = await vehicle_service.get_accessible(session, user, vehicle_ref)
+    if await device_repository.get_by_hardware_id(session, payload.hardware_id):
+        raise ConflictError("A device with this hardware ID already exists")
+    configuration = {
+        "captureEnabled": True,
+        "monitoringMode": "motion_triggered",
+        "heartbeatIntervalSeconds": 30,
+    }
+    device = await device_repository.create(
+        session,
+        vehicle_id=vehicle.id,
+        owner_id=vehicle.owner_id or user.id,
+        hardware_id=payload.hardware_id.upper(),
+        device_name=payload.device_name or payload.hardware_id,
+        device_type=payload.device_type,
+        manufacturer=payload.manufacturer,
+        model=payload.model,
+        firmware_version=payload.firmware_version,
+        configuration=configuration,
+        status="PENDING",
+        api_key_hash=_hash_key(f"dk_{secrets.token_urlsafe(32)}"),
+    )
+    await session.commit()
+    return await _to_out(session, await _load(session, str(device.id)), vehicle.vehicle_code)
+
+
+async def list_vehicle_devices(session: AsyncSession, user: User, vehicle_ref: str) -> list[DeviceOut]:
+    vehicle = await vehicle_service.get_accessible(session, user, vehicle_ref)
+    devices = await device_repository.list_for_vehicle(session, vehicle.id)
+    return [DeviceOut.from_model(device, vehicle.vehicle_code) for device in devices]
+
+
+async def update_configuration(
+    session: AsyncSession,
+    user: User,
+    device_id: str,
+    payload: DeviceConfigurationUpdate,
+) -> DeviceOut:
+    _require_admin(user)
+    device, code = await get_accessible(session, user, device_id)
+    require_controllable(device)
+    config = payload.configuration.model_dump(by_alias=True)
+    device.configuration = config
+    device.audio_capture_enabled = config["captureEnabled"]
+    device.monitoring_mode = config["monitoringMode"]
+    await session.commit()
+    return await _to_out(session, await _load(session, device_id), code)
+
+
+async def classify_simulated_audio(
+    session: AsyncSession,
+    mongo: AsyncIOMotorDatabase,
+    user: User,
+    device_id: str,
+    audio_bytes: bytes,
+    *,
+    location: str | None = None,
+) -> SimulatedAudioEvent:
+    device, vehicle_code = await get_accessible(session, user, device_id)
+    if device.status in {"DISABLED", "RETIRED"}:
+        raise ConflictError(f"{device.status.title()} device rejects audio event data")
+    if device.vehicle_id is None:
+        raise ConflictError("Device is not associated with a vehicle")
+    try:
+        result = audio_classifier.classify_audio(audio_bytes)
+    except (RuntimeError, ValueError) as exc:
+        raise UnprocessableError(f"Audio classification failed: {exc}") from exc
+
+    event_id = uuid4()
+    timestamp = utcnow()
+    severity = alert_service.SEVERITY_BY_CLASS.get(result.event_type)
+    document = {
+        "audio_record_id": str(event_id),
+        "event_id": str(event_id),
+        "vehicle_id": vehicle_code,
+        "device_id": str(device.id),
+        "predicted_class": result.event_type,
+        "confidence": result.confidence,
+        "severity": severity,
+        "timestamp": timestamp,
+        "location": location,
+        "is_simulation": True,
+        "model_version": result.model_version,
+        "model_name": result.model_name,
+        "processing_time_ms": result.processing_time_ms,
+        "processing_timestamp": result.processing_timestamp,
+        "created_at": timestamp,
+    }
+    await analysis_repository.insert_result(mongo, document)
+    alert_id = None
+    if alert_service.should_raise_alert(result.event_type, result.confidence):
+        alert = await alert_service.create_from_simulation(
+            session,
+            vehicle_id=device.vehicle_id,
+            event_id=event_id,
+            analysis=document,
+            location=location,
+        )
+        await session.commit()
+        alert_id = alert.id
+    return SimulatedAudioEvent(
+        eventId=event_id,
+        vehicleId=vehicle_code,
+        deviceId=device.id,
+        eventType=result.event_type,
+        confidence=result.confidence,
+        severity=severity,
+        timestamp=timestamp,
+        location=location,
+        isSimulation=True,
+        modelVersion=result.model_version,
+        processingTimestamp=result.processing_timestamp,
+        alertId=alert_id,
+    )

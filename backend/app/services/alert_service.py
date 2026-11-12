@@ -16,10 +16,12 @@ from app.services import vehicle_service
 ALERT_CONFIDENCE_THRESHOLD = 0.80
 SEVERITY_BY_CLASS = {
     "crash": "critical",
-    "glass_break": "high",
-    "engine_noise": "medium",
-    "horn": "low",
-    "cabin_noise": "low",
+    "gunshot": "critical",
+    "glass_breaking": "high",
+    "screaming": "high",
+    "emergency_vehicle_siren": "high",
+    "tire_skidding": "high",
+    "abnormal_engine_noise": "medium",
 }
 
 
@@ -49,6 +51,38 @@ async def create_from_classification(
         user_id=None,
         action_type="created",
         notes="Created automatically by audio classification",
+    )
+    return alert
+
+
+async def create_from_simulation(
+    session: AsyncSession,
+    *,
+    vehicle_id: UUID,
+    event_id: UUID,
+    analysis: dict[str, Any],
+    location: str | None,
+) -> Alert:
+    predicted = analysis["predicted_class"]
+    alert = await alert_repository.create(
+        session,
+        vehicle_id=vehicle_id,
+        audio_record_id=None,
+        event_type=predicted,
+        severity=SEVERITY_BY_CLASS.get(predicted, "medium"),
+        confidence=analysis["confidence"],
+        status="open",
+        location=location,
+        is_simulation=True,
+        simulation_event_id=str(event_id),
+        detected_at=utcnow(),
+    )
+    await alert_repository.add_action(
+        session,
+        alert_id=alert.id,
+        user_id=None,
+        action_type="created",
+        notes="Created by a simulated device audio event",
     )
     return alert
 
@@ -109,9 +143,12 @@ async def list_alerts(
 async def get_detail(session: AsyncSession, mongo: AsyncIOMotorDatabase, user: User, alert_id: UUID) -> AlertDetail:
     alert = await _get_visible(session, user, alert_id)
     actions = await alert_repository.list_actions(session, alert.id)
-    document = (
-        await analysis_repository.get_for_audio(mongo, str(alert.audio_record_id)) if alert.audio_record_id else None
-    )
+    if alert.audio_record_id:
+        document = await analysis_repository.get_for_audio(mongo, str(alert.audio_record_id))
+    elif alert.simulation_event_id:
+        document = await analysis_repository.get_for_event(mongo, alert.simulation_event_id)
+    else:
+        document = None
     return AlertDetail(
         **AlertOut.from_model(alert).model_dump(),
         actions=[AlertActionOut.from_model(action) for action in actions],

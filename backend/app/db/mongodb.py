@@ -9,6 +9,7 @@ TELEMETRY = "telemetry_events"
 AUDIO_ANALYSIS = "audio_analysis_results"
 SENSOR_EVENTS = "sensor_events"
 DEVICE_LOGS = "device_logs"
+DEVICE_HEARTBEATS = "device_heartbeats"
 
 _client: AsyncIOMotorClient | None = None
 
@@ -45,3 +46,5 @@ async def ensure_indexes(db: AsyncIOMotorDatabase) -> None:
     await db[AUDIO_ANALYSIS].create_index([("predicted_class", ASCENDING)])
     await db[SENSOR_EVENTS].create_index([("vehicle_id", ASCENDING), ("timestamp", ASCENDING)])
     await db[DEVICE_LOGS].create_index([("vehicle_id", ASCENDING), ("timestamp", ASCENDING)])
+    await db[DEVICE_HEARTBEATS].create_index([("device_id", ASCENDING)])
+    await db[DEVICE_HEARTBEATS].create_index([("device_id", ASCENDING), ("received_at", ASCENDING)])

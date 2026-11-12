@@ -17,7 +17,27 @@ async def get_accessible(session: AsyncSession, user: User, ref: str) -> Vehicle
     vehicle = await vehicle_repository.get_by_ref(session, ref)
     if vehicle is None or not vehicle.is_active or not await vehicle_repository.user_can_access(session, user, vehicle):
         raise NotFoundError("Vehicle not found")
+    await _refresh_registered_devices(session, vehicle)
     return vehicle
+
+
+async def _refresh_registered_devices(session: AsyncSession, vehicle: Vehicle) -> None:
+    from app.services import device_service
+
+    await device_service.refresh_stale(session)
+
+
+async def _require_unique_identifiers(
+    session: AsyncSession, *, vin: str | None, license_plate: str | None, exclude_id=None
+) -> None:
+    if vin:
+        existing = await vehicle_repository.get_by_vin(session, vin)
+        if existing is not None and existing.id != exclude_id:
+            raise ConflictError("A vehicle with this VIN already exists")
+    if license_plate:
+        existing = await vehicle_repository.get_by_license_plate(session, license_plate)
+        if existing is not None and existing.id != exclude_id:
+            raise ConflictError("A vehicle with this license plate already exists")
 
 
 async def _require_user(session: AsyncSession, user_id) -> None:
@@ -31,6 +51,7 @@ async def create_vehicle(session: AsyncSession, user: User, payload: VehicleCrea
         raise ForbiddenError("Only administrators can set another owner or assign users")
     if await vehicle_repository.get_by_ref(session, payload.vehicle_code):
         raise ConflictError(f"Vehicle {payload.vehicle_code} already exists (it may be deactivated)")
+    await _require_unique_identifiers(session, vin=payload.vin, license_plate=payload.license_plate)
 
     owner_id = payload.owner_id or user.id
     if owner_id != user.id:
@@ -42,6 +63,8 @@ async def create_vehicle(session: AsyncSession, user: User, payload: VehicleCrea
         session,
         vehicle_code=payload.vehicle_code,
         vehicle_type=payload.vehicle_type,
+        vin=payload.vin,
+        license_plate=payload.license_plate,
         status=payload.status,
         owner_id=owner_id,
     )
@@ -56,9 +79,12 @@ async def list_vehicles(
 ) -> list[Vehicle]:
     if include_inactive and user.role != "admin":
         raise ForbiddenError("Only administrators can list deactivated vehicles")
-    return await vehicle_repository.list_for_user(
+    vehicles = await vehicle_repository.list_for_user(
         session, user, limit=limit, offset=offset, include_inactive=include_inactive
     )
+    if vehicles:
+        await _refresh_registered_devices(session, vehicles[0])
+    return vehicles
 
 
 async def _require_manage(user: User, vehicle: Vehicle) -> None:
@@ -70,6 +96,12 @@ async def update_vehicle(session: AsyncSession, user: User, ref: str, payload: V
     vehicle = await get_accessible(session, user, ref)
     await _require_manage(user, vehicle)
     fields = payload.model_dump(exclude_unset=True)
+    await _require_unique_identifiers(
+        session,
+        vin=fields.get("vin", vehicle.vin),
+        license_plate=fields.get("license_plate", vehicle.license_plate),
+        exclude_id=vehicle.id,
+    )
     if "owner_id" in fields:
         if user.role != "admin":
             raise ForbiddenError("Only administrators can change the vehicle owner")

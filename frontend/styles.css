@@ -169,3 +169,30 @@ td { padding: 13px 14px; border-bottom: 1px solid #e8eef6; white-space: nowrap; 
 .form-error { margin: 0 0 12px; color: var(--red); font-size: 14px; font-weight: 650; }
 .primary-btn:disabled { opacity: .6; cursor: progress; }
 .marker.gray { background: #8796ab; }
+
+/* Vehicle and device management */
+.management-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+.data-form { display: grid; gap: 14px; align-content: start; }
+.data-form label { display: grid; gap: 7px; color: #45617f; font-size: 13px; font-weight: 750; }
+.data-form input, .data-form select { width: 100%; border: 1px solid #cbd8e8; border-radius: 9px; padding: 12px 14px; color: var(--ink); background: white; outline: none; }
+.data-form input:focus, .data-form select:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(17,120,246,.12); }
+.data-form .check { display: flex; }
+.data-form .check input { width: 17px; }
+.form-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.record-list { display: grid; gap: 10px; }
+.record-card { width: 100%; display: grid; grid-template-columns: minmax(0, 1fr) minmax(115px, auto) auto; align-items: center; gap: 14px; border: 1px solid #dce8f5; border-radius: 11px; padding: 13px 14px; background: #f8fbff; color: var(--ink); text-align: left; }
+.record-card:hover, .record-card.selected-record { border-color: #86baf8; background: #eef6ff; }
+.record-card span { display: grid; gap: 4px; min-width: 0; }
+.record-card small { color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
+.danger-btn { border: 1px solid #f1b7b7; border-radius: 9px; padding: 12px 18px; background: #fff4f4; color: #b52e3b; font-weight: 750; }
+.danger-btn:hover { background: #ffe7e7; }
+.danger-btn:disabled, .secondary-btn:disabled { opacity: .55; cursor: not-allowed; }
+.action-stack { display: grid; gap: 10px; }
+.help-text { color: var(--muted); font-size: 13px; line-height: 1.5; }
+.empty-state { color: var(--muted); text-align: center; padding: 28px; }
+
+@media (max-width: 720px) {
+  .management-grid, .form-row { grid-template-columns: 1fr; }
+  .record-card { grid-template-columns: minmax(0, 1fr) auto; }
+  .record-card > span:nth-child(2) { display: none; }
+}

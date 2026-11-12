@@ -7,7 +7,15 @@ from pydantic import BaseModel, Field
 from app.models.alert import Alert, AlertAction
 from app.schemas.audio import AnalysisOut
 
-EventType = Literal["glass_break", "engine_noise", "cabin_noise", "horn", "crash", "normal"]
+EventType = Literal[
+    "emergency_vehicle_siren",
+    "glass_breaking",
+    "screaming",
+    "gunshot",
+    "crash",
+    "tire_skidding",
+    "abnormal_engine_noise",
+]
 Severity = Literal["low", "medium", "high", "critical"]
 AlertStatus = Literal["open", "acknowledged", "resolved"]
 
@@ -54,6 +62,8 @@ class AlertOut(BaseModel):
     confidence: float
     status: str
     location: str | None
+    is_simulation: bool
+    simulation_event_id: str | None
     detected_at: datetime
     reviewed_at: datetime | None
     resolved_at: datetime | None
@@ -70,6 +80,8 @@ class AlertOut(BaseModel):
             confidence=alert.confidence,
             status=alert.status,
             location=alert.location,
+            is_simulation=alert.is_simulation,
+            simulation_event_id=alert.simulation_event_id,
             detected_at=alert.detected_at,
             reviewed_at=alert.reviewed_at,
             resolved_at=alert.resolved_at,

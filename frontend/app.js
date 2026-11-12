@@ -30,7 +30,7 @@ function navIcon(type) {
 function carIllustration() { return `<svg viewBox="0 0 300 190" role="img" aria-label="Top view of CAR-1024"><ellipse cx="150" cy="96" rx="112" ry="76" fill="#eaf2fb" stroke="#5f7897" stroke-width="8"/><path d="M91 59c8-17 24-28 42-31h34c18 3 34 14 42 31l13 31v30l-13 31c-8 17-24 28-42 31h-34c-18-3-34-14-42-31l-13-31V90l13-31Z" fill="#fdfefe" stroke="#b8cadd" stroke-width="5"/><path d="M112 64c7-14 18-20 32-22h12c14 2 25 8 32 22l7 16h-90l7-16Z" fill="#2e4c70" stroke="#8ca6c2" stroke-width="4"/><path d="M105 85h90v29h-90Z" fill="#bdd0e3" stroke="#8ca6c2" stroke-width="4"/><path d="M112 125h76l-7 14c-7 12-17 18-31 20h-0c-14-2-24-8-31-20l-7-14Z" fill="#2e4c70" stroke="#8ca6c2" stroke-width="4"/><rect x="65" y="70" width="25" height="47" rx="9" fill="#2f4967"/><rect x="210" y="70" width="25" height="47" rx="9" fill="#2f4967"/><path d="M112 48h76M112 144h76" stroke="#ffffff" stroke-width="4" stroke-linecap="round"/></svg>`; }
 
 function brandMark() { return `<div class="brand-mark" aria-label="AudioGuard logo"><span></span><span></span><span></span><span></span><span></span></div>`; }
-function nav() { const items = [['dashboard','Dashboard'],['map','Live Map'],['alerts','Alert Details'],['car','Car Monitoring & Control'],['analytics','Analytics']]; return `<aside class="sidebar"><div class="side-brand">${brandMark()}<div>Smart Car<br/>Data Management</div></div><nav class="nav">${items.map(([id,label]) => `<button class="nav-btn ${state.page===id?'active':''}" data-page="${id}"><span class="nav-icon">${navIcon(id)}</span><span>${label}</span></button>`).join('')}</nav></aside>`; }
+function nav() { const items = [['dashboard','Dashboard'],['fleet','Vehicles & Devices'],['map','Live Map'],['alerts','Alert Details'],['car','Car Monitoring & Control'],['analytics','Analytics']]; return `<aside class="sidebar"><div class="side-brand">${brandMark()}<div>Smart Car<br/>Data Management</div></div><nav class="nav">${items.map(([id,label]) => `<button class="nav-btn ${state.page===id?'active':''}" data-page="${id}"><span class="nav-icon">${navIcon(id === 'fleet' ? 'car' : id)}</span><span>${label}</span></button>`).join('')}</nav></aside>`; }
 // ---------------------------------------------------------------------------
 // Data layer. `data` starts as the built-in sample data (the original static UI) and is
 // replaced by live backend data whenever the API is reachable. If the backend is down,
@@ -61,7 +61,7 @@ function duration(iso) {
   return `${minutes} min`;
 }
 
-const TYPE_TONE = { glass_break: 'red', crash: 'red', engine_noise: 'blue', cabin_noise: 'green', horn: 'amber', normal: 'green' };
+const TYPE_TONE = { emergency_vehicle_siren: 'amber', glass_breaking: 'red', screaming: 'red', gunshot: 'red', crash: 'red', tire_skidding: 'amber', abnormal_engine_noise: 'blue', normal: 'green' };
 const SEVERITY_TONE = { critical: 'red', high: 'red', medium: 'amber', low: 'blue' };
 const ALERT_LABEL = { open: 'Unread', acknowledged: 'Acknowledged', resolved: 'Resolved' };
 const STATUS_TONE = { online: 'green', healthy: 'green', locked: 'green', warning: 'amber' };
@@ -84,10 +84,13 @@ function sampleData() {
       sampleVehicle('CAR-1025', 'SUV', { x: 20, y: 64 }, { x: 17, y: 55 }, 'green'),
       sampleVehicle('CAR-1026', 'Sedan', { x: 78, y: 51 }, { x: 75, y: 42 }, 'orange'),
     ],
+    vehicleRecords: [],
+    devices: [],
+    heartbeats: [],
     alertList: [],
     alert: { id: null, title: 'Glass Break Detected', severity: 'High Severity', tone: 'red', vehicle: 'CAR-1024', time: '10:24 AM', confidence: '94% Confidence', location: 'Front Right', status: 'Unread', model: 'v2.3.1', ms: '320 ms', audio: 'AUD-20240218-102435-7F3A', reviewed: '-' },
     overTime: [15, 22, 30, 18, 25, 33, 46, 35, 18, 20, 29, 42, 58, 37].map((h, i) => ({ h, label: i % 3 === 0 ? `Apr ${i + 1}` : '' })),
-    byType: [{ name: 'Glass Break', key: 'glass_break', tone: 'red', count: 168, conf: '94%', last: 'Apr 30, 2024 14:32:18' }, { name: 'Engine Noise', key: 'engine_noise', tone: 'blue', count: 302, conf: '91%', last: 'Apr 30, 2024 13:17:05' }, { name: 'Cabin Noise', key: 'cabin_noise', tone: 'green', count: 418, conf: '89%', last: 'Apr 30, 2024 12:54:41' }],
+    byType: [{ name: 'Glass Breaking', key: 'glass_breaking', tone: 'red', count: 168, conf: '94%', last: 'Apr 30, 2024 14:32:18' }, { name: 'Abnormal Engine Noise', key: 'abnormal_engine_noise', tone: 'blue', count: 302, conf: '91%', last: 'Apr 30, 2024 13:17:05' }, { name: 'Emergency Vehicle Siren', key: 'emergency_vehicle_siren', tone: 'amber', count: 118, conf: '89%', last: 'Apr 30, 2024 12:54:41' }],
     activity: [['2024-06-24 10:18:32', 'Audio Capture Started', 'Microphone activated'], ['2024-06-24 10:15:21', 'Monitoring Mode Changed', 'Mode set to Continuous'], ['2024-06-24 10:12:03', 'Device Status Check', 'All systems normal'], ['2024-06-24 10:08:17', 'Connection Established', 'Vehicle connected to server']],
     ranges: ['Apr 1, 2024 - Apr 30, 2024', 'Last 7 days'],
   };
@@ -95,7 +98,7 @@ function sampleData() {
 
 // Live mode starts empty (never flash sample numbers to a signed-in user) and fills in per page.
 function emptyLiveData() {
-  return { ...sampleData(), live: true, summary: { vehicles: 0, uploads: 0, detections: 0, alerts: 0, events: '0', critical: 0, confidence: '0%', resolution: '0%' }, events: [], weekly: [], vehicles: [], alertList: [], alert: null, overTime: [], byType: [], activity: [] };
+  return { ...sampleData(), live: true, summary: { vehicles: 0, uploads: 0, detections: 0, alerts: 0, events: '0', critical: 0, confidence: '0%', resolution: '0%' }, events: [], weekly: [], vehicles: [], vehicleRecords: [], devices: [], heartbeats: [], alertList: [], alert: null, overTime: [], byType: [], activity: [] };
 }
 
 let data = sampleData();
@@ -121,7 +124,7 @@ function toVehicle(v, latest) {
   const mapStatus = v.status === 'maintenance' ? 'In Maintenance' : !connected ? 'Offline' : moving ? 'In Transit' : 'Parked';
   const uptime = connected && d.online_since ? duration(d.online_since) : v.status === 'maintenance' ? 'In maintenance' : connected ? '—' : 'Offline';
   const state_ = v.status;
-  return { code: v.vehicle_code, type: v.vehicle_type, connected, status: state_, microphone: cap(d.microphone_status || 'offline'), engine: cap(d.engine_status || 'unknown'), gps: cap(d.gps_status || 'no_signal'), lastSeen: ago(v.last_seen_at || d.last_sync_at), sync: ago(d.last_sync_at), uptime, mapStatus, mode: d.monitoring_mode || 'continuous', capture: d.audio_capture_enabled !== false, recording: Boolean(d.recording), latest: latest || null, devices: v.devices || [], defaultDeviceId: v.default_device_id || null };
+  return { code: v.vehicle_code, type: v.vehicle_type, connected, status: state_, microphone: cap(v.audio_device_state || 'offline'), engine: cap(d.engine_status || 'unknown'), gps: cap(d.gps_status || 'no_signal'), lastSeen: ago(v.last_seen_at || d.last_sync_at), sync: ago(d.last_sync_at), uptime, mapStatus, mode: d.monitoring_mode || 'continuous', capture: d.audio_capture_enabled !== false, recording: Boolean(d.recording), latest: latest || null, devices: v.devices || [], defaultDeviceId: v.default_device_id || null };
 }
 
 function placeMarkers(vehicles) {
@@ -155,7 +158,7 @@ function weeklyUploads(audioList) {
 
 function toAlertView(alert) {
   const analysis = alert.analysis;
-  return { id: alert.id, title: `${cap(alert.event_type)} Detected`, severity: `${cap(alert.severity)} Severity`, tone: SEVERITY_TONE[alert.severity] || 'red', vehicle: alert.vehicle_code, time: fmtTime(alert.detected_at), confidence: `${Math.round(alert.confidence * 100)}% Confidence`, location: alert.location || 'Unknown', status: ALERT_LABEL[alert.status] || cap(alert.status), model: analysis ? analysis.model_version : '—', ms: analysis ? `${analysis.processing_time_ms} ms` : '—', audio: alert.audio_record_id || '—', audioId: alert.audio_record_id, reviewed: alert.reviewed_at ? fmtTime(alert.reviewed_at) : '-' };
+  return { id: alert.id, title: `${cap(alert.event_type)} Detected`, severity: `${cap(alert.severity)} Severity`, tone: SEVERITY_TONE[alert.severity] || 'red', vehicle: alert.vehicle_code, time: fmtTime(alert.detected_at), confidence: `${Math.round(alert.confidence * 100)}% Confidence`, location: alert.location || 'Unknown', status: ALERT_LABEL[alert.status] || cap(alert.status), model: analysis ? analysis.model_version : '—', ms: analysis ? `${analysis.processing_time_ms} ms` : '—', audio: alert.audio_record_id || alert.simulation_event_id || '—', audioId: alert.audio_record_id, isSimulation: Boolean(alert.is_simulation), reviewed: alert.reviewed_at ? fmtTime(alert.reviewed_at) : '-' };
 }
 
 function daysFor(range) { return /7/.test(range) ? 7 : /90/.test(range) ? 90 : 30; }
@@ -176,6 +179,7 @@ function toAnalytics(summary, over, byType, days) {
 // ----- Page loaders (live mode only) -----
 async function loadVehicles(withLocation = false) {
   const list = await api.vehicles();
+  data.vehicleRecords = list;
   const latest = withLocation ? await Promise.all(list.map((v) => api.latestTelemetry(v.vehicle_code).catch((e) => (e.status === 404 ? null : Promise.reject(e))))) : [];
   data.vehicles = list.map((v, i) => toVehicle(v, latest[i]));
   if (withLocation) placeMarkers(data.vehicles);
@@ -192,6 +196,13 @@ const loaders = {
     data.weekly = weeklyUploads(audio);
   },
   async map() { await loadVehicles(true); },
+  async fleet() {
+    await loadVehicles();
+    const code = currentVehicle().code;
+    data.devices = code === NO_VEHICLE.code ? [] : await api.vehicleDevices(code);
+    if (!data.devices.some((device) => device.id === state.deviceId)) state.deviceId = data.devices[0]?.id || null;
+    data.heartbeats = state.deviceId ? await api.deviceHeartbeats(state.deviceId, { limit: 20 }) : [];
+  },
   async alerts() {
     await loadVehicles();
     const code = currentVehicle().code;
@@ -263,7 +274,7 @@ function alertPage() {
   const a = data.alert;
   const picker = data.live && data.alertList.length ? `<div class="filter" style="margin-bottom:18px"><label>Alert (${esc(state.vehicle)})</label><select class="select-control" id="alertPick">${data.alertList.map((x) => `<option value="${esc(x.id)}" ${x.id === state.alertId ? 'selected' : ''}>${esc(x.label)}</option>`).join('')}</select></div>` : '';
   if (!a) return shell(`<h1 class="page-title">Alert Details</h1><div class="panel"><p>No alerts have been raised for ${esc(state.vehicle)}.</p></div>`);
-  return shell(`<h1 class="page-title">Alert Details</h1>${picker}<div class="panel"><div class="alert-hero"><div class="alert-symbol">!</div><div><h2>${esc(a.title)}</h2><span class="status-pill ${a.tone}">${esc(a.severity)}</span><div class="alert-meta" style="margin-top:18px"><span>▱ ${esc(data.live ? a.vehicle : state.vehicle)}</span><span>◷ ${esc(a.time)}</span><span>♩ ${esc(a.confidence)}</span><span>⌖ ${esc(a.location)}</span><span class="status-pill ${a.status === 'Resolved' ? 'green' : 'red'}">${esc(a.status)}</span></div></div></div><div class="action-row"><button class="primary-btn" id="ackBtn">✓ ${a.status === 'Resolved' ? 'Resolved' : 'Acknowledge Alert'}</button><button class="secondary-btn" id="resolveBtn">✓ Mark as Resolved</button><button class="secondary-btn" id="audioBtn">♩ View Audio Record</button></div></div><div class="grid two-col"><div class="panel"><h2 class="section-title">Detection Information</h2><div class="detail-list"><div class="detail-row">▣ <span>Model Version</span><strong>${esc(a.model)}</strong></div><div class="detail-row">◷ <span>Processing Time</span><strong>${esc(a.ms)}</strong></div><div class="detail-row">▤ <span>Audio Record ID</span><strong>${esc(a.audio)}</strong></div><div class="detail-row">ⓘ <span>Recommended Action</span><strong>Check vehicle surroundings and verify vehicle status.</strong></div></div></div><div class="panel"><h2 class="section-title">Alert Timeline</h2><div class="timeline"><div class="timeline-item"><span class="timeline-dot active"></span><div><strong>Detected</strong><div>${esc(a.time)}</div></div></div><div class="timeline-item"><span class="timeline-dot"></span><div><strong>Reviewed</strong><div>${esc(a.reviewed)}</div></div></div><div class="timeline-item"><span class="timeline-dot"></span><div><strong>Notification Sent</strong><div>-</div></div></div></div></div></div>`);
+  return shell(`<h1 class="page-title">Alert Details</h1>${picker}<div class="panel"><div class="alert-hero"><div class="alert-symbol">!</div><div><h2>${esc(a.title)}</h2><span class="status-pill ${a.tone}">${esc(a.severity)}</span>${a.isSimulation ? '<span class="status-pill amber">Simulation</span>' : ''}<div class="alert-meta" style="margin-top:18px"><span>▱ ${esc(data.live ? a.vehicle : state.vehicle)}</span><span>◷ ${esc(a.time)}</span><span>♩ ${esc(a.confidence)}</span><span>⌖ ${esc(a.location)}</span><span class="status-pill ${a.status === 'Resolved' ? 'green' : 'red'}">${esc(a.status)}</span></div></div></div><div class="action-row"><button class="primary-btn" id="ackBtn">✓ ${a.status === 'Resolved' ? 'Resolved' : 'Acknowledge Alert'}</button><button class="secondary-btn" id="resolveBtn">✓ Mark as Resolved</button><button class="secondary-btn" id="audioBtn">♩ View Audio Record</button></div></div><div class="grid two-col"><div class="panel"><h2 class="section-title">Detection Information</h2><div class="detail-list"><div class="detail-row">▣ <span>Model Version</span><strong>${esc(a.model)}</strong></div><div class="detail-row">◷ <span>Processing Time</span><strong>${esc(a.ms)}</strong></div><div class="detail-row">▤ <span>${a.isSimulation ? 'Simulation Event ID' : 'Audio Record ID'}</span><strong>${esc(a.audio)}</strong></div><div class="detail-row">ⓘ <span>Recommended Action</span><strong>Check vehicle surroundings and verify vehicle status.</strong></div></div></div><div class="panel"><h2 class="section-title">Alert Timeline</h2><div class="timeline"><div class="timeline-item"><span class="timeline-dot active"></span><div><strong>Detected</strong><div>${esc(a.time)}</div></div></div><div class="timeline-item"><span class="timeline-dot"></span><div><strong>Reviewed</strong><div>${esc(a.reviewed)}</div></div></div><div class="timeline-item"><span class="timeline-dot"></span><div><strong>Notification Sent</strong><div>-</div></div></div></div></div></div>`);
 }
 
 function carPage() {
@@ -294,12 +305,23 @@ function analytics() {
   return shell(`<h1 class="page-title">Audio Event Analytics</h1><div class="panel"><div class="grid filters"><div class="filter"><label>Vehicle</label><select class="select-control" id="fVehicle"><option>All Vehicles</option>${data.vehicles.map((v) => option(v.code, state.filters.vehicle)).join('')}</select></div><div class="filter"><label>Date Range</label><select class="select-control" id="fRange">${ranges}</select></div><div class="filter"><label>Event Type</label><select class="select-control" id="fType"><option>All Types</option>${typeNames.map((t) => option(t, state.filters.type)).join('')}</select></div><button class="primary-btn" id="applyFilters">Apply Filters</button></div></div><div class="grid metrics" style="margin-top:18px">${metric(svgIcon('audio'), 'Total Events', s.events)}${metric(svgIcon('alert'), 'Critical Events', s.critical)}${metric(svgIcon('detection'), 'Average Confidence', s.confidence)}${metric(svgIcon('car'), 'Resolution Rate', s.resolution)}</div><div class="grid two-col" style="margin-top:18px"><div class="panel events-chart"><h2 class="section-title">Events Over Time</h2><div class="bar-chart" style="height:240px"><div class="bar-chart-inner">${data.overTime.map((b) => `<div class="bar" style="height:${b.h}%" title="${esc(b.tip || '')}"><span>${esc(b.label)}</span></div>`).join('')}</div></div></div><div class="panel"><h2 class="section-title">Events by Type</h2><div class="donut" ${donut}></div><div class="detail-list">${shownTypes.slice(0, 3).map((t) => `<div class="detail-row"><span class="status-pill ${t.tone}">${esc(t.name)}</span><strong>${t.count}</strong></div>`).join('')}</div></div></div><div class="panel" style="margin-top:18px"><h2 class="section-title">Top Detected Events</h2><div class="table-wrap"><table><thead><tr><th>Event Type</th><th>Count</th><th>Average Confidence</th><th>Last Detected</th></tr></thead><tbody>${rows}</tbody></table></div></div>`);
 }
 
+function fleetPage() {
+  const vehicle = data.vehicleRecords.find((item) => item.vehicle_code === state.vehicle);
+  const device = data.devices.find((item) => item.id === state.deviceId);
+  const deviceRows = data.devices.map((item) => `<button class="record-card ${item.id === state.deviceId ? 'selected-record' : ''}" data-device-id="${esc(item.id)}"><span><strong>${esc(item.name)}</strong><small>${esc(item.hardware_id)}</small></span><span><small>Last heartbeat</small><strong>${item.last_heartbeat_at ? esc(ago(item.last_heartbeat_at)) : 'Never'}</strong></span>${statePill(item.state)}</button>`).join('');
+  const history = data.heartbeats.map((item) => `<tr><td>${esc(fmtDateTime(item.received_at))}</td><td>${esc(item.health)}</td><td>${esc(JSON.stringify(item.metrics))}</td></tr>`).join('');
+  const vehicleSettings = vehicle ? `<form class="panel data-form" id="vehicleUpdateForm"><h2 class="section-title">Selected vehicle</h2><label>Vehicle code<input value="${esc(vehicle.vehicle_code)}" disabled></label><label>Vehicle type<input name="vehicle_type" value="${esc(vehicle.vehicle_type)}" required></label><label>VIN<input name="vin" value="${esc(vehicle.vin || '')}" minlength="17" maxlength="17" pattern="[A-HJ-NPR-Z0-9]{17}" required></label><label>License plate<input name="license_plate" value="${esc(vehicle.license_plate || '')}" maxlength="20" required></label><label>Status<select name="status" class="select-control"><option value="connected" ${vehicle.status === 'connected' ? 'selected' : ''}>Connected</option><option value="disconnected" ${vehicle.status === 'disconnected' ? 'selected' : ''}>Disconnected</option><option value="maintenance" ${vehicle.status === 'maintenance' ? 'selected' : ''}>Maintenance</option></select></label><button class="primary-btn">Save vehicle</button><button class="danger-btn" type="button" id="removeVehicleBtn">Remove vehicle</button></form>` : '<section class="panel empty-state">Register a vehicle to begin.</section>';
+  const deviceRegistration = vehicle ? `<form class="panel data-form" id="deviceCreateForm"><h2 class="section-title">Register IoT device</h2><label>Name<input name="name" required maxlength="100"></label><label>Hardware ID<input name="hardware_id" required minlength="3" maxlength="100"></label><label>Firmware version<input name="firmware_version" maxlength="50"></label><button class="primary-btn">Register device</button></form>` : '';
+  const deviceSettings = device ? `<div class="management-grid activity"><form class="panel data-form" id="deviceUpdateForm"><h2 class="section-title">Device details</h2><label>Name<input name="name" value="${esc(device.name)}" required></label><label>Firmware version<input name="firmware_version" value="${esc(device.firmware_version || '')}"></label><button class="primary-btn" ${device.state === 'RETIRED' ? 'disabled' : ''}>Save details</button></form><form class="panel data-form" id="deviceConfigurationForm"><h2 class="section-title">Device settings</h2><label class="check"><input name="captureEnabled" type="checkbox" ${device.configuration.captureEnabled ? 'checked' : ''}> Capture enabled</label><label>Monitoring mode<select name="monitoringMode" class="select-control"><option value="motion_triggered" ${device.configuration.monitoringMode === 'motion_triggered' ? 'selected' : ''}>Event triggered</option><option value="continuous" ${device.configuration.monitoringMode === 'continuous' ? 'selected' : ''}>Continuous</option><option value="paused" ${device.configuration.monitoringMode === 'paused' ? 'selected' : ''}>Paused</option></select></label><label>Heartbeat interval (seconds)<input name="heartbeatIntervalSeconds" type="number" min="5" max="3600" value="${esc(device.configuration.heartbeatIntervalSeconds || 30)}"></label><button class="primary-btn" ${['DISABLED','RETIRED'].includes(device.state) ? 'disabled' : ''}>Save settings</button></form></div><div class="management-grid activity"><form class="panel data-form" id="audioSimulationForm"><h2 class="section-title">Simulate audio event</h2><label>PCM WAV file<input name="audio" type="file" accept=".wav,audio/wav" required></label><label>Location (optional)<input name="location" maxlength="200" placeholder="Parking garage"></label><button class="primary-btn" ${['DISABLED','RETIRED'].includes(device.state) ? 'disabled' : ''}>Classify audio</button><p class="help-text">Uses the configured demo model; results are marked as simulations.</p></form><form class="panel data-form" id="heartbeatForm"><h2 class="section-title">Send test heartbeat</h2><label>Health<select name="health" class="select-control"><option>HEALTHY</option><option>WARNING</option></select></label><div class="form-row"><label>Battery %<input name="batteryPercent" type="number" min="0" max="100"></label><label>Temperature °C<input name="temperatureCelsius" type="number"></label></div><button class="primary-btn" ${device.state === 'RETIRED' ? 'disabled' : ''}>Send heartbeat</button></form><section class="panel"><h2 class="section-title">Lifecycle</h2><div class="action-stack"><button class="secondary-btn" id="disableDeviceBtn" ${['DISABLED','RETIRED'].includes(device.state) ? 'disabled' : ''}>Disable</button><button class="danger-btn" id="retireDeviceBtn" ${device.state === 'RETIRED' ? 'disabled' : ''}>Retire permanently</button><button class="danger-btn" id="removeDeviceBtn">Remove from inventory</button></div><p class="help-text">Removal preserves the PostgreSQL record and MongoDB heartbeat history.</p></section></div><section class="panel activity"><h2 class="section-title">Heartbeat history</h2><div class="table-wrap"><table><thead><tr><th>Received</th><th>Health</th><th>Metrics</th></tr></thead><tbody>${history || emptyRow(3, 'No heartbeat history.')}</tbody></table></div></section>` : '';
+  return shell(`<h1 class="page-title">Vehicles &amp; IoT Devices</h1><div class="management-grid"><form class="panel data-form" id="vehicleCreateForm"><h2 class="section-title">Register vehicle</h2><label>Vehicle code<input name="vehicle_code" placeholder="CAR-1024" required></label><label>Vehicle type<input name="vehicle_type" placeholder="Sedan" required></label><label>VIN<input name="vin" placeholder="1HGCM82633A004352" minlength="17" maxlength="17" pattern="[A-HJ-NPR-Z0-9]{17}" required></label><label>License plate<input name="license_plate" placeholder="8ABC123" maxlength="20" required></label><button class="primary-btn">Register vehicle</button></form>${vehicleSettings}</div><div class="management-grid activity">${deviceRegistration}<section class="panel"><h2 class="section-title">Devices for ${esc(state.vehicle)}</h2><div class="record-list">${deviceRows || '<div class="empty-state">No active devices registered.</div>'}</div></section></div>${deviceSettings}`);
+}
+
 function login(register = false) { return `<main class="auth-shell ${register ? 'register-shell' : ''}"><div class="auth-card">${brandMark()}<h1>Smart Car Data Management</h1><p class="sub">${register ? 'Create your account' : 'Sign in to monitor your vehicle audio system'}</p>${register ? `<div class="form-field"><label>Full Name</label><input id="fullName" placeholder="Enter your full name" autocomplete="name" /></div>` : ''}<div class="form-field"><label>Email Address</label><input id="email" type="email" placeholder="you@example.com" autocomplete="email" /></div><div class="form-field"><label>Password</label><input id="password" type="password" placeholder="Enter your password" autocomplete="${register ? 'new-password' : 'current-password'}" /></div>${register ? `<div class="form-field"><label>Confirm Password</label><input id="confirmPassword" type="password" placeholder="Confirm your password" autocomplete="new-password" /></div>` : ''}<p class="form-error" id="authError" role="alert" hidden></p><div class="auth-actions"><label class="check"><input id="remember" type="checkbox" checked /> ${register ? 'I agree to the Terms and Conditions' : 'Remember me'}</label>${!register ? '<span class="link" id="forgot" role="button" tabindex="0">Forgot password?</span>' : ''}</div><button class="primary-btn full" id="authBtn">${register ? 'Create Account' : 'Sign In'}</button><div class="auth-switch">${register ? 'Already have an account?' : 'Don’t have an account?'} <span class="link" id="switchAuth">${register ? 'Sign In' : 'Create an account'}</span></div></div></main>`; }
 
 // ---------------------------------------------------------------------------
 // Rendering, navigation and actions
 // ---------------------------------------------------------------------------
-const pages = { dashboard, map: mapPage, alerts: alertPage, car: carPage };
+const pages = { dashboard, fleet: fleetPage, map: mapPage, alerts: alertPage, car: carPage };
 
 function render() {
   if (!state.user) { app.innerHTML = login(false); bind(); return; }
@@ -420,10 +442,40 @@ async function alertAction(kind) {
   }
 }
 
+async function fleetAction(action, successMessage = '') {
+  try {
+    await action();
+    await loadData();
+    state.notice = successMessage;
+    render();
+  } catch (err) {
+    if (err.status === 401) return endSession('Your session has expired. Please sign in again.');
+    state.notice = err.message;
+    render();
+  }
+}
+
+function formObject(form) { return Object.fromEntries(new FormData(form)); }
+
+function bindFleet() {
+  document.querySelectorAll('[data-device-id]').forEach((button) => button.addEventListener('click', async () => { state.deviceId = button.dataset.deviceId; await show(); }));
+  document.querySelector('#vehicleCreateForm')?.addEventListener('submit', (event) => { event.preventDefault(); const values = formObject(event.currentTarget); values.vin = values.vin.toUpperCase(); values.license_plate = values.license_plate.toUpperCase(); fleetAction(async () => { const created = await api.createVehicle({ ...values, status: 'disconnected' }); state.vehicle = created.vehicle_code; state.deviceId = null; }, 'Vehicle registered.'); });
+  document.querySelector('#vehicleUpdateForm')?.addEventListener('submit', (event) => { event.preventDefault(); const values = formObject(event.currentTarget); values.vin = values.vin.toUpperCase(); values.license_plate = values.license_plate.toUpperCase(); fleetAction(() => api.updateVehicle(state.vehicle, values), 'Vehicle updated.'); });
+  document.querySelector('#removeVehicleBtn')?.addEventListener('click', () => { if (confirm('Remove this vehicle? Associated devices will be detached and retired.')) fleetAction(async () => { await api.removeVehicle(state.vehicle); state.deviceId = null; }, 'Vehicle removed; device history was retained.'); });
+  document.querySelector('#deviceCreateForm')?.addEventListener('submit', (event) => { event.preventDefault(); const values = formObject(event.currentTarget); if (!values.firmware_version) values.firmware_version = null; fleetAction(async () => { const created = await api.createDevice(state.vehicle, values); state.deviceId = created.id; }, 'Device registered in PENDING state.'); });
+  document.querySelector('#deviceUpdateForm')?.addEventListener('submit', (event) => { event.preventDefault(); const values = formObject(event.currentTarget); if (!values.firmware_version) values.firmware_version = null; fleetAction(() => api.updateDevice(state.deviceId, values), 'Device updated.'); });
+  document.querySelector('#deviceConfigurationForm')?.addEventListener('submit', (event) => { event.preventDefault(); const form = new FormData(event.currentTarget); const configuration = { captureEnabled: form.has('captureEnabled'), monitoringMode: form.get('monitoringMode'), heartbeatIntervalSeconds: Number(form.get('heartbeatIntervalSeconds')) }; fleetAction(() => api.updateDeviceConfiguration(state.deviceId, configuration), 'Device settings updated.'); });
+  document.querySelector('#heartbeatForm')?.addEventListener('submit', (event) => { event.preventDefault(); const form = new FormData(event.currentTarget); const metrics = {}; if (form.get('batteryPercent')) metrics.batteryPercent = Number(form.get('batteryPercent')); if (form.get('temperatureCelsius')) metrics.temperatureCelsius = Number(form.get('temperatureCelsius')); fleetAction(() => api.heartbeat(state.deviceId, { health: form.get('health'), metrics }), 'Heartbeat received.'); });
+  document.querySelector('#audioSimulationForm')?.addEventListener('submit', async (event) => { event.preventDefault(); const form = new FormData(event.currentTarget); const audio = form.get('audio'); if (!(audio instanceof File) || !audio.size) { state.notice = 'Choose a WAV file first.'; return render(); } try { const result = await api.classifyDeviceAudio(state.deviceId, audio, String(form.get('location') || '').trim()); await loadData(); const alert = result.alertId ? ' · simulated alert created' : ' · no alert (normal or below threshold)'; state.notice = `${cap(result.eventType)} · ${percent(result.confidence * 100)} confidence · ${result.modelVersion}${alert}`; render(); } catch (err) { if (err.status === 401) return endSession('Your session has expired. Please sign in again.'); state.notice = err.message; render(); } });
+  document.querySelector('#disableDeviceBtn')?.addEventListener('click', () => { if (confirm('Disable this device? Heartbeats will not reactivate it.')) fleetAction(() => api.updateDevice(state.deviceId, { state: 'DISABLED' }), 'Device disabled.'); });
+  document.querySelector('#retireDeviceBtn')?.addEventListener('click', () => { if (confirm('Retire this device permanently?')) fleetAction(() => api.updateDevice(state.deviceId, { state: 'RETIRED' }), 'Device retired.'); });
+  document.querySelector('#removeDeviceBtn')?.addEventListener('click', () => { if (confirm('Remove this device from active inventory while preserving history?')) fleetAction(async () => { await api.removeDevice(state.deviceId); state.deviceId = null; }, 'Device removed; heartbeat history was retained.'); });
+}
+
 function bind() {
   document.querySelectorAll('[data-page]').forEach((b) => b.addEventListener('click', () => { if (b.dataset.vehicle) { state.vehicle = b.dataset.vehicle; state.alertId = null; } navigate(b.dataset.page); }));
   const top = document.querySelector('#vehicleTop');
-  if (top) top.addEventListener('change', (e) => { state.vehicle = e.target.value; state.alertId = null; state.notice = ''; show(); });
+  if (top) top.addEventListener('change', (e) => { state.vehicle = e.target.value; state.deviceId = null; state.alertId = null; state.notice = ''; show(); });
   const profileBtn = document.querySelector('#profileMenuBtn'); const accountMenu = document.querySelector('#accountMenu');
   if (profileBtn && accountMenu) profileBtn.addEventListener('click', (e) => { e.stopPropagation(); const isOpen = !accountMenu.hasAttribute('hidden'); if (isOpen) { accountMenu.setAttribute('hidden', ''); } else { accountMenu.removeAttribute('hidden'); } profileBtn.setAttribute('aria-expanded', String(!isOpen)); });
   document.querySelector('#logoutBtn')?.addEventListener('click', () => endSession());
@@ -444,6 +496,7 @@ function bind() {
   document.querySelector('#refreshBtn')?.addEventListener('click', async () => { await reload(); if (!state.notice && data.live) state.notice = 'Status refreshed.'; render(); });
   document.querySelector('#mapFilter')?.addEventListener('change', (e) => { state.mapVehicle = e.target.value; if (state.mapVehicle !== 'All Vehicles') state.vehicle = state.mapVehicle; render(); });
   document.querySelector('#applyFilters')?.addEventListener('click', () => { state.filters = { vehicle: field('#fVehicle'), range: field('#fRange'), type: field('#fType') }; show(); });
+  bindFleet();
 }
 
 window.addEventListener('hashchange', () => { const page = location.hash.replace('#/', '') || 'dashboard'; if (state.user && page !== state.page) { state.page = page; show(); } });

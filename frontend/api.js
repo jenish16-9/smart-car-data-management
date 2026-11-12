@@ -45,7 +45,7 @@ function errorMessage(body) {
 }
 
 async function apiRequest(path, options = {}) {
-  const headers = { 'Content-Type': 'application/json', ...(options.headers || {}) };
+  const headers = { ...(options.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }), ...(options.headers || {}) };
   const token = tokenStore.get();
   if (token) headers.Authorization = `Bearer ${token}`;
 
@@ -83,12 +83,29 @@ export const api = {
   // Vehicles
   vehicles: () => apiRequest('/vehicles'),
   vehicle: (id) => apiRequest(`/vehicles/${encodeURIComponent(id)}`),
+  createVehicle: (vehicle) => post('/vehicles', vehicle),
+  updateVehicle: (id, vehicle) => apiRequest(`/vehicles/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(vehicle) }),
+  removeVehicle: (id) => apiRequest(`/vehicles/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   updateControls: (id, controls) => apiRequest(`/vehicles/${encodeURIComponent(id)}/controls`, { method: 'PATCH', body: JSON.stringify(controls) }),
   devices: (params) => apiRequest(`/devices${queryString(params)}`),
-  device: (id) => apiRequest(`/devices/${encodeURIComponent(id)}`),
-  deviceHeartbeats: (id, params) => apiRequest(`/devices/${encodeURIComponent(id)}/heartbeats${queryString(params)}`),
   updateDeviceControls: (id, controls) => apiRequest(`/devices/${encodeURIComponent(id)}/status`, { method: 'PATCH', body: JSON.stringify(controls) }),
   deviceLogs: (id, params) => apiRequest(`/vehicles/${encodeURIComponent(id)}/logs${queryString(params)}`),
+
+  // Registered IoT devices
+  vehicleDevices: (vehicleId) => apiRequest(`/vehicles/${encodeURIComponent(vehicleId)}/devices`),
+  createDevice: (vehicleId, device) => post(`/vehicles/${encodeURIComponent(vehicleId)}/devices`, device),
+  device: (id) => apiRequest(`/devices/${encodeURIComponent(id)}`),
+  updateDevice: (id, device) => apiRequest(`/devices/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(device) }),
+  updateDeviceConfiguration: (id, configuration) => apiRequest(`/devices/${encodeURIComponent(id)}/configuration`, { method: 'PUT', body: JSON.stringify({ configuration }) }),
+  heartbeat: (id, heartbeat) => post(`/devices/${encodeURIComponent(id)}/heartbeat`, heartbeat),
+  deviceHeartbeats: (id, params) => apiRequest(`/devices/${encodeURIComponent(id)}/heartbeats${queryString(params)}`),
+  removeDevice: (id) => apiRequest(`/devices/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  classifyDeviceAudio: (id, audio, location = '') => {
+    const body = new FormData();
+    body.append('audio', audio);
+    if (location) body.append('location', location);
+    return apiRequest(`/devices/${encodeURIComponent(id)}/classify-audio`, { method: 'POST', body });
+  },
 
   // Audio
   audio: (params) => apiRequest(`/audio${queryString(params)}`),

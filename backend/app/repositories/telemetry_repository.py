@@ -6,7 +6,7 @@ from typing import Any
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from pymongo import DESCENDING
 
-from app.db.mongodb import DEVICE_LOGS, SENSOR_EVENTS, TELEMETRY
+from app.db.mongodb import DEVICE_HEARTBEATS, DEVICE_LOGS, SENSOR_EVENTS, TELEMETRY
 
 
 def aware(value: Any) -> Any:
@@ -71,5 +71,21 @@ async def insert_device_log(
 
 
 async def list_device_logs(db: AsyncIOMotorDatabase, vehicle_code: str, limit: int) -> list[dict[str, Any]]:
-    cursor = db[DEVICE_LOGS].find({"vehicle_id": vehicle_code}, {"_id": 0}).sort("timestamp", DESCENDING).limit(limit)
+    cursor = (
+        db[DEVICE_LOGS]
+        .find({"vehicle_id": vehicle_code}, {"_id": 0})
+        .sort([("timestamp", DESCENDING), ("_id", DESCENDING)])
+        .limit(limit)
+    )
+    return [normalize(doc) async for doc in cursor]
+
+
+async def insert_device_heartbeat(db: AsyncIOMotorDatabase, document: dict[str, Any]) -> None:
+    await db[DEVICE_HEARTBEATS].insert_one(dict(document))
+
+
+async def list_device_heartbeats(db: AsyncIOMotorDatabase, device_id: str, limit: int) -> list[dict[str, Any]]:
+    cursor = (
+        db[DEVICE_HEARTBEATS].find({"device_id": device_id}, {"_id": 0}).sort("received_at", DESCENDING).limit(limit)
+    )
     return [normalize(doc) async for doc in cursor]

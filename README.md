@@ -210,8 +210,8 @@ All under `/api/v1` and protected by a `Bearer` JWT unless marked public.
 | --- | --- |
 | Auth | `POST /auth/register` (public), `POST /auth/login` (public), `POST /auth/logout`, `GET /auth/me` |
 | Users | `GET /users/me`, `PATCH /users/me` |
-| Vehicles | `POST /vehicles`, `GET /vehicles`, `GET /vehicles/{id}`, `PATCH /vehicles/{id}`, `DELETE /vehicles/{id}` (soft delete), `PATCH /vehicles/{id}/controls` (acts on the vehicle's default device), `GET /vehicles/{id}/logs` (device activity) |
-| Devices | `POST /devices` (admin), `GET /devices?vehicle_id=&status=&include_retired=`, `GET/PATCH /devices/{id}` (PATCH admin), `DELETE /devices/{id}` (admin, soft removal), `POST /devices/{id}/rotate-key` (admin), `GET/PATCH /devices/{id}/status`, `POST /devices/{id}/recording/start\|stop`, `POST /devices/{id}/monitoring/pause\|resume`, `POST /devices/{id}/heartbeat`, `GET /devices/{id}/heartbeats?start=&end=&limit=&offset=` |
+| Vehicles | `POST /vehicles`, `GET /vehicles`, `GET /vehicles/{id}`, `PATCH /vehicles/{id}`, `DELETE /vehicles/{id}` (soft delete), `POST/GET /vehicles/{id}/devices`, `PATCH /vehicles/{id}/controls` (acts on the vehicle's default device), `GET /vehicles/{id}/logs` (device activity) |
+| Devices | `POST /devices` (admin), `GET /devices?vehicle_id=&status=&include_retired=`, `GET/PATCH /devices/{id}` (PATCH admin), `DELETE /devices/{id}` (admin, soft removal), `PUT /devices/{id}/configuration`, `POST /devices/{id}/rotate-key` (admin), `GET/PATCH /devices/{id}/status`, `POST /devices/{id}/recording/start\|stop`, `POST /devices/{id}/monitoring/pause\|resume`, `POST /devices/{id}/heartbeat`, `GET /devices/{id}/heartbeats?start=&end=&limit=&offset=`, `POST /devices/{id}/classify-audio` (WAV simulation) |
 | Audio | `POST /audio`, `GET /audio`, `GET /audio/{id}`, `PATCH /audio/{id}/status` |
 | Alerts | `POST /alerts`, `GET /alerts`, `GET /alerts/{id}`, `POST /alerts/{id}/acknowledge`, `POST /alerts/{id}/resolve` |
 | Telemetry | `POST /telemetry/{vehicle}`, `GET /telemetry/{vehicle}`, `GET /telemetry/{vehicle}/latest` |
@@ -227,8 +227,8 @@ invalid tokens return `401`. Non-admin users only see vehicles they own or are a
 A vehicle has **many IoT devices** (`devices` table). Device-level controls (monitoring mode, audio capture,
 recording) and lifecycle live on the device; the old per-vehicle `device_status` row is kept for the vehicle
 health snapshot (engine/GPS/microphone) and for vehicles that have no registered device yet.
-`vehicle_code` (unique, e.g. `CAR-1024`) and `vehicle_type` already existed on `vehicles`; no VIN/make/model/year
-columns exist, so nothing was removed or renamed.
+`vehicle_code` (unique, e.g. `CAR-1024`) and `vehicle_type` are retained. Optional unique `vin` and
+`license_plate` columns were added without changing existing rows; the management UI requires both for new vehicles.
 
 **Lifecycle statuses**: `PENDING` (registered, no heartbeat yet) → `ACTIVE` (recent heartbeats) / `WARNING`
 (heartbeat `warning`/`error` or battery < 15 %) → `DELAYED` (no heartbeat for `DEVICE_HEARTBEAT_TIMEOUT_SECONDS`,
@@ -262,8 +262,10 @@ Vehicle-level `PATCH /vehicles/{id}/controls` still works and acts on the vehicl
 non-retired one, online devices first). Telemetry may include a `device_id`; MongoDB documents then also carry
 `device_id` and `hardware_id` (older documents only have `vehicle_id`).
 
-**Migration and seed** (`alembic upgrade head` applies `0004`: new tables/columns, one backfilled `LEGACY-<code>`
-device per existing vehicle with its current controls, RESTRICT foreign keys; nothing is deleted):
+**Migration and seed** (`alembic upgrade head` applies the complete chain through `0006`): `0004` adds the rich
+device and heartbeat tables, controls, soft deletion, and legacy-device backfill; `0005` makes that model compatible
+with the shared cloud schema; `0006` adds vehicle VIN/license identifiers and simulated-alert provenance. Nothing is
+deleted by these upgrades.
 
 ```bash
 cd backend && alembic upgrade head && python -m app.db.seed_demo
@@ -281,7 +283,7 @@ adopts the migration's legacy device as each vehicle's primary unit, and never p
 1. `POST /audio` creates the audio metadata (PostgreSQL `audio_records`).
 2. The object-storage URL (`s3://…` / `https://…`) is saved with it. Clients upload the file to
    S3/MinIO themselves; no audio bytes are stored in either database.
-3. `services/audio_classifier.classify_audio` processes the file.
+3. `services/audio_classifier.classify_audio` processes the file using the configured mock or trained baseline.
 4. The result is saved in MongoDB `audio_analysis_results`.
 5. If `confidence >= 0.80` **and** the class is not `normal`, a PostgreSQL alert is created.
 6. The alert shows up in the dashboard (active alerts, recent events, Alert Details page).
@@ -289,6 +291,10 @@ adopts the migration's legacy device as each vehicle's primary unit, and never p
 8. Every alert action (`created`, `acknowledged`, `resolved`) is stored in `alert_actions`.
 
 If classification fails, the audio record is kept with `processing_status = failed`.
+
+The management UI also accepts a PCM WAV file at `POST /devices/{id}/classify-audio`. It records the prediction in
+MongoDB and creates a PostgreSQL alert when the confidence threshold is met. These records have
+`is_simulation=true`, so demo data remains distinguishable from production detections.
 
 ## Run the tests
 
@@ -303,10 +309,11 @@ FastAPI dependency overrides, so they never connect to (or delete) a real databa
 
 ## Future ML model integration
 
-`backend/app/services/audio_classifier.py` currently contains a **mock classifier**. It does
-not analyse audio: it returns a deterministic placeholder label from a hash of the path, so the
-pipeline can be built and tested. **It is not a trained model and must not be used for real
-detection.** To integrate a real model (PyTorch, TensorFlow, YAMNet, …), keep the interface
+`backend/app/services/audio_classifier.py` defaults to a deterministic **mock classifier** so the
+pipeline works without an artifact. An optional scikit-learn baseline can be trained and selected with
+`AUDIO_CLASSIFIER_BACKEND=sklearn`; its dataset audit, training, evaluation, and configuration are documented in
+[`docs/audio-model.md`](docs/audio-model.md). The baseline is suitable for a class demo, but it is **not a validated
+production safety model**. To integrate a stronger model (PyTorch, TensorFlow, YAMNet, …), keep the interface
 `classify_audio(audio_path) -> AudioClassificationResult`, download/stream the file from the
 storage URL, run inference, and update `MODEL_NAME` / `MODEL_VERSION`. The rest of the system is
 unchanged. For heavy models, move step 3 of the workflow to a background worker/queue.
