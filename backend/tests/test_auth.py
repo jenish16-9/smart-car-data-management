@@ -29,6 +29,25 @@ async def test_register_cannot_choose_admin_role(client):
     assert (await client.post("/auth/register", json=payload)).json()["role"] == "user"
 
 
+async def test_admin_can_create_and_list_customer_or_admin_accounts(client, admin_headers, user_headers):
+    customer = {
+        "name": "Managed Customer",
+        "email": "managed@example.com",
+        "password": "managed-pass-1",
+        "role": "user",
+    }
+    created = await client.post("/users", json=customer, headers=admin_headers)
+    assert created.status_code == 201 and created.json()["role"] == "user"
+    promoted = await client.post(
+        "/users", json={**customer, "email": "admin2@example.com", "role": "admin"}, headers=admin_headers
+    )
+    assert promoted.status_code == 201 and promoted.json()["role"] == "admin"
+    listed = await client.get("/users", headers=admin_headers)
+    assert {item["email"] for item in listed.json()} >= {"managed@example.com", "admin2@example.com"}
+    assert (await client.post("/users", json=customer, headers=user_headers)).status_code == 403
+    assert (await client.get("/users", headers=user_headers)).status_code == 403
+
+
 async def test_login_returns_token_and_user(client, admin_headers):
     response = await client.post("/auth/login", json={"email": ADMIN_EMAIL, "password": ADMIN_PASSWORD})
     assert response.status_code == 200

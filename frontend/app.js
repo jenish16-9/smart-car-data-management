@@ -22,7 +22,8 @@ function navIcon(type) {
     map: '<path d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="2.5"/>',
     alerts: '<path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9ZM10 21h4"/>',
     car: '<path d="M5 16h14l-1-6H6l-1 6Z"/><path d="M7 10l2-4h6l2 4M7 16v2M17 16v2"/><circle cx="8" cy="14" r="1"/><circle cx="16" cy="14" r="1"/>',
-    analytics: '<path d="M5 19V9M12 19V5M19 19v-7"/>'
+    analytics: '<path d="M5 19V9M12 19V5M19 19v-7"/>',
+    user: '<circle cx="12" cy="8" r="4"/><path d="M4 21c0-5 3-8 8-8s8 3 8 8"/>'
   };
   return `<svg viewBox="0 0 24 24" aria-hidden="true">${paths[type]}</svg>`;
 }
@@ -30,7 +31,7 @@ function navIcon(type) {
 function carIllustration() { return `<svg viewBox="0 0 300 190" role="img" aria-label="Top view of CAR-1024"><ellipse cx="150" cy="96" rx="112" ry="76" fill="#eaf2fb" stroke="#5f7897" stroke-width="8"/><path d="M91 59c8-17 24-28 42-31h34c18 3 34 14 42 31l13 31v30l-13 31c-8 17-24 28-42 31h-34c-18-3-34-14-42-31l-13-31V90l13-31Z" fill="#fdfefe" stroke="#b8cadd" stroke-width="5"/><path d="M112 64c7-14 18-20 32-22h12c14 2 25 8 32 22l7 16h-90l7-16Z" fill="#2e4c70" stroke="#8ca6c2" stroke-width="4"/><path d="M105 85h90v29h-90Z" fill="#bdd0e3" stroke="#8ca6c2" stroke-width="4"/><path d="M112 125h76l-7 14c-7 12-17 18-31 20h-0c-14-2-24-8-31-20l-7-14Z" fill="#2e4c70" stroke="#8ca6c2" stroke-width="4"/><rect x="65" y="70" width="25" height="47" rx="9" fill="#2f4967"/><rect x="210" y="70" width="25" height="47" rx="9" fill="#2f4967"/><path d="M112 48h76M112 144h76" stroke="#ffffff" stroke-width="4" stroke-linecap="round"/></svg>`; }
 
 function brandMark() { return `<div class="brand-mark" aria-label="AudioGuard logo"><span></span><span></span><span></span><span></span><span></span></div>`; }
-function nav() { const items = [['dashboard','Dashboard'],['fleet','Vehicles & Devices'],['map','Live Map'],['alerts','Alert Details'],['car','Car Monitoring & Control'],['analytics','Analytics']]; return `<aside class="sidebar"><div class="side-brand">${brandMark()}<div>Smart Car<br/>Data Management</div></div><nav class="nav">${items.map(([id,label]) => `<button class="nav-btn ${state.page===id?'active':''}" data-page="${id}"><span class="nav-icon">${navIcon(id === 'fleet' ? 'car' : id)}</span><span>${label}</span></button>`).join('')}</nav></aside>`; }
+function nav() { const items = [['dashboard','Dashboard'],['fleet','Vehicles & Devices'],['map','Live Map'],['alerts','Alert Details'],['car','Car Monitoring & Control'],['analytics','Analytics']]; if (state.user?.role === 'admin') items.push(['admin', 'Admin']); return `<aside class="sidebar"><div class="side-brand">${brandMark()}<div>Smart Car<br/>Data Management</div></div><nav class="nav">${items.map(([id,label]) => `<button class="nav-btn ${state.page===id?'active':''}" data-page="${id}"><span class="nav-icon">${navIcon(id === 'fleet' ? 'car' : id === 'admin' ? 'user' : id)}</span><span>${label}</span></button>`).join('')}</nav></aside>`; }
 // ---------------------------------------------------------------------------
 // Data layer. `data` starts as the built-in sample data (the original static UI) and is
 // replaced by live backend data whenever the API is reachable. If the backend is down,
@@ -63,11 +64,11 @@ function duration(iso) {
 
 const TYPE_TONE = { emergency_vehicle_siren: 'amber', glass_breaking: 'red', screaming: 'red', gunshot: 'red', crash: 'red', tire_skidding: 'amber', abnormal_engine_noise: 'blue', normal: 'green' };
 const SEVERITY_TONE = { critical: 'red', high: 'red', medium: 'amber', low: 'blue' };
-const ALERT_LABEL = { open: 'Unread', acknowledged: 'Acknowledged', resolved: 'Resolved' };
+const ALERT_LABEL = { open: 'New', acknowledged: 'Acknowledged', resolved: 'Fixed' };
+const ALERT_TONE = { open: 'red', acknowledged: 'amber', resolved: 'green' };
 const STATUS_TONE = { online: 'green', healthy: 'green', locked: 'green', warning: 'amber' };
 const toneOf = (value) => STATUS_TONE[String(value).toLowerCase()] || 'red';
 const DONUT_COLORS = ['#ef6868', '#549bf1', '#72d18f', '#a694ee'];
-const MARKER_COLORS = ['blue', 'green', 'orange'];
 
 function sampleVehicle(code, type, pos, label, color) {
   return { code, type, connected: true, microphone: 'Online', engine: 'Healthy', gps: 'Locked', lastSeen: '2 min ago', sync: '2 minutes ago', uptime: '2 days 6 hours', registered: '—', mapStatus: 'In Transit', mode: 'continuous', capture: true, recording: false, pos: { ...pos, label }, color };
@@ -85,12 +86,18 @@ function sampleData() {
       sampleVehicle('CAR-1026', 'Sedan', { x: 78, y: 51 }, { x: 75, y: 42 }, 'orange'),
     ],
     vehicleRecords: [],
+    users: [],
     devices: [],
     heartbeats: [],
+    audioModels: [{ id: 'default', name: 'Demo audio classifier', version: 'demo', available: true }],
     alertList: [],
-    alert: { id: null, title: 'Glass Break Detected', severity: 'High Severity', tone: 'red', vehicle: 'CAR-1024', time: '10:24 AM', confidence: '94% Confidence', location: 'Front Right', status: 'Unread', model: 'v2.3.1', ms: '320 ms', audio: 'AUD-20240218-102435-7F3A', reviewed: '-' },
+    alert: { id: null, title: 'Glass Break Detected', severity: 'High Severity', tone: 'red', vehicle: 'CAR-1024', time: '10:24 AM', confidence: '94% Confidence', location: 'Front Right', status: 'New', statusKey: 'open', model: 'AudioGuard Baseline · v2.3.1', ms: '320 ms', audio: 'AUD-20240218-102435-7F3A', reviewed: '-' },
     overTime: [15, 22, 30, 18, 25, 33, 46, 35, 18, 20, 29, 42, 58, 37].map((h, i) => ({ h, label: i % 3 === 0 ? `Apr ${i + 1}` : '' })),
     byType: [{ name: 'Glass Breaking', key: 'glass_breaking', tone: 'red', count: 168, conf: '94%', last: 'Apr 30, 2024 14:32:18' }, { name: 'Abnormal Engine Noise', key: 'abnormal_engine_noise', tone: 'blue', count: 302, conf: '91%', last: 'Apr 30, 2024 13:17:05' }, { name: 'Emergency Vehicle Siren', key: 'emergency_vehicle_siren', tone: 'amber', count: 118, conf: '89%', last: 'Apr 30, 2024 12:54:41' }],
+    analyticsEvents: [
+      { type: 'Glass Breaking', vehicle: 'CAR-1024', confidence: '94%', status: 'New', statusKey: 'open', model: 'AudioGuard Baseline · v2.3.1', detected: 'Apr 30, 2024 14:32:18' },
+      { type: 'Engine Noise', vehicle: 'CAR-1024', confidence: '91%', status: 'Acknowledged', statusKey: 'acknowledged', model: 'AudioGuard Baseline · v2.3.1', detected: 'Apr 30, 2024 13:17:05' },
+    ],
     activity: [['2024-06-24 10:18:32', 'Audio Capture Started', 'Microphone activated'], ['2024-06-24 10:15:21', 'Monitoring Mode Changed', 'Mode set to Continuous'], ['2024-06-24 10:12:03', 'Device Status Check', 'All systems normal'], ['2024-06-24 10:08:17', 'Connection Established', 'Vehicle connected to server']],
     ranges: ['Apr 1, 2024 - Apr 30, 2024', 'Last 7 days'],
   };
@@ -98,7 +105,7 @@ function sampleData() {
 
 // Live mode starts empty (never flash sample numbers to a signed-in user) and fills in per page.
 function emptyLiveData() {
-  return { ...sampleData(), live: true, summary: { vehicles: 0, uploads: 0, detections: 0, alerts: 0, events: '0', critical: 0, confidence: '0%', resolution: '0%' }, events: [], weekly: [], vehicles: [], vehicleRecords: [], devices: [], heartbeats: [], alertList: [], alert: null, overTime: [], byType: [], activity: [] };
+  return { ...sampleData(), live: true, summary: { vehicles: 0, uploads: 0, detections: 0, alerts: 0, events: '0', critical: 0, confidence: '0%', resolution: '0%' }, events: [], weekly: [], vehicles: [], vehicleRecords: [], users: [], devices: [], heartbeats: [], audioModels: [], alertList: [], alert: null, overTime: [], byType: [], analyticsEvents: [], activity: [] };
 }
 
 let data = sampleData();
@@ -127,20 +134,6 @@ function toVehicle(v, latest) {
   return { code: v.vehicle_code, type: v.vehicle_type, connected, status: state_, microphone: cap(v.audio_device_state || 'offline'), engine: cap(d.engine_status || 'unknown'), gps: cap(d.gps_status || 'no_signal'), lastSeen: ago(v.last_seen_at || d.last_sync_at), sync: ago(d.last_sync_at), uptime, mapStatus, mode: d.monitoring_mode || 'continuous', capture: d.audio_capture_enabled !== false, recording: Boolean(d.recording), latest: latest || null, devices: v.devices || [], defaultDeviceId: v.default_device_id || null };
 }
 
-function placeMarkers(vehicles) {
-  const located = vehicles.filter((v) => v.latest && v.latest.location);
-  const lats = located.map((v) => v.latest.location.latitude);
-  const lngs = located.map((v) => v.latest.location.longitude);
-  const spanLat = Math.max(...lats) - Math.min(...lats);
-  const spanLng = Math.max(...lngs) - Math.min(...lngs);
-  located.forEach((v, i) => {
-    const x = spanLng ? 12 + ((v.latest.location.longitude - Math.min(...lngs)) / spanLng) * 76 : 50;
-    const y = spanLat ? 12 + ((Math.max(...lats) - v.latest.location.latitude) / spanLat) * 70 : 50;
-    v.pos = { x, y, label: { x: x - 3, y: y - 8 } };
-    v.color = v.status === 'maintenance' ? 'orange' : v.status === 'disconnected' ? 'gray' : MARKER_COLORS[i % 2];
-  });
-}
-
 function toEventRow(audio) {
   const analysis = audio.analysis;
   if (!analysis) return [audio.vehicle_code, 'Pending analysis', fmtDateTime(audio.uploaded_at), '—', cap(audio.processing_status), audio.processing_status === 'failed' ? 'red' : 'amber'];
@@ -158,7 +151,8 @@ function weeklyUploads(audioList) {
 
 function toAlertView(alert) {
   const analysis = alert.analysis;
-  return { id: alert.id, title: `${cap(alert.event_type)} Detected`, severity: `${cap(alert.severity)} Severity`, tone: SEVERITY_TONE[alert.severity] || 'red', vehicle: alert.vehicle_code, time: fmtTime(alert.detected_at), confidence: `${Math.round(alert.confidence * 100)}% Confidence`, location: alert.location || 'Unknown', status: ALERT_LABEL[alert.status] || cap(alert.status), model: analysis ? analysis.model_version : '—', ms: analysis ? `${analysis.processing_time_ms} ms` : '—', audio: alert.audio_record_id || alert.simulation_event_id || '—', audioId: alert.audio_record_id, isSimulation: Boolean(alert.is_simulation), reviewed: alert.reviewed_at ? fmtTime(alert.reviewed_at) : '-' };
+  const model = analysis ? `${analysis.model_name} · ${analysis.model_version}` : 'Manual / no classifier';
+  return { id: alert.id, title: `${cap(alert.event_type)} Detected`, eventType: cap(alert.event_type), severity: `${cap(alert.severity)} Severity`, tone: SEVERITY_TONE[alert.severity] || 'red', vehicle: alert.vehicle_code, time: fmtTime(alert.detected_at), detectedAt: alert.detected_at, confidence: `${Math.round(alert.confidence * 100)}% Confidence`, confidenceValue: `${Math.round(alert.confidence * 100)}%`, location: alert.location || 'Unknown', status: ALERT_LABEL[alert.status] || cap(alert.status), statusKey: alert.status, model, ms: analysis ? `${analysis.processing_time_ms} ms` : '—', audio: alert.audio_record_id || alert.simulation_event_id || '—', audioId: alert.audio_record_id, isSimulation: Boolean(alert.is_simulation), reviewed: alert.reviewed_at ? fmtTime(alert.reviewed_at) : '-' };
 }
 
 function daysFor(range) { return /7/.test(range) ? 7 : /90/.test(range) ? 90 : 30; }
@@ -182,7 +176,6 @@ async function loadVehicles(withLocation = false) {
   data.vehicleRecords = list;
   const latest = withLocation ? await Promise.all(list.map((v) => api.latestTelemetry(v.vehicle_code).catch((e) => (e.status === 404 ? null : Promise.reject(e))))) : [];
   data.vehicles = list.map((v, i) => toVehicle(v, latest[i]));
-  if (withLocation) placeMarkers(data.vehicles);
   if (!data.vehicles.some((v) => v.code === state.vehicle) && data.vehicles.length) state.vehicle = data.vehicles[0].code;
 }
 
@@ -199,7 +192,14 @@ const loaders = {
   async fleet() {
     await loadVehicles();
     const code = currentVehicle().code;
-    data.devices = code === NO_VEHICLE.code ? [] : await api.vehicleDevices(code);
+    const [devices, models, users] = await Promise.all([
+      code === NO_VEHICLE.code ? [] : api.vehicleDevices(code),
+      api.audioModels().catch(() => []),
+      state.user?.role === 'admin' ? api.users() : [],
+    ]);
+    data.devices = devices;
+    data.audioModels = models;
+    data.users = users;
     if (!data.devices.some((device) => device.id === state.deviceId)) state.deviceId = data.devices[0]?.id || null;
     data.heartbeats = state.deviceId ? await api.deviceHeartbeats(state.deviceId, { limit: 20 }) : [];
   },
@@ -227,9 +227,26 @@ const loaders = {
     await loadVehicles();
     const params = { vehicle_id: state.filters.vehicle === 'All Vehicles' ? '' : state.filters.vehicle };
     const days = daysFor(state.filters.range);
-    const [summary, over, byType] = await Promise.all([api.analytics(params), api.eventsOverTime({ ...params, days }), api.eventsByType(params)]);
+    const [summary, over, byType, alerts] = await Promise.all([
+      api.analytics(params),
+      api.eventsOverTime({ ...params, days }),
+      api.eventsByType(params),
+      api.alerts({ ...params, limit: 50 }),
+    ]);
     Object.assign(data, toAnalytics(summary, over, byType, days));
+    const details = await Promise.all(alerts.map((alert) => api.alert(alert.id).catch(() => ({ ...alert, analysis: null }))));
+    data.analyticsEvents = details.map((alert) => {
+      const view = toAlertView(alert);
+      return { type: view.eventType, vehicle: view.vehicle, confidence: view.confidenceValue, status: view.status, statusKey: view.statusKey, model: view.model, detected: fmtLong(view.detectedAt) };
+    });
     data.ranges = ['Last 30 days', 'Last 7 days', 'Last 90 days'];
+  },
+  async admin() {
+    if (state.user?.role !== 'admin') throw new Error('Administrator access required');
+    await loadVehicles();
+    const [users, devices] = await Promise.all([api.users(), api.devices({ include_retired: true, limit: 500 })]);
+    data.users = users;
+    data.devices = devices;
   },
 };
 
@@ -263,18 +280,47 @@ function dashboard() {
 }
 
 function mapPage() {
-  const shown = data.vehicles.filter((v) => state.mapVehicle === 'All Vehicles' || v.code === state.mapVehicle);
-  const markers = shown.filter((v) => v.pos).map((v) => `<span class="map-label" style="left:${v.pos.label.x}%;top:${v.pos.label.y}%">${esc(v.code)}</span><span class="marker ${v.color}" style="left:${v.pos.x}%;top:${v.pos.y}%">▱</span>`).join('');
-  const empty = data.live && !markers ? '<span class="map-label" style="left:40%;top:45%">No location data yet</span>' : '';
   const v = data.vehicles.find((x) => x.code === state.mapVehicle) || currentVehicle();
-  return shell(`<h1 class="page-title">Live Vehicle Map</h1><div class="grid map-layout"><div class="panel"><div class="filter"><label>Vehicle</label><select class="select-control" id="mapFilter"><option>All Vehicles</option>${data.vehicles.map((x) => `<option ${x.code === state.mapVehicle ? 'selected' : ''}>${esc(x.code)}</option>`).join('')}</select></div><div class="map-box" style="margin-top:18px">${markers}${empty}</div></div><div class="panel vehicle-card"><h2>${esc(v.code)}</h2><div class="detail-list"><div class="detail-row">${connectedPill(v)}</div><div class="detail-row">♩ <strong>Audio Device ${esc(v.microphone)}</strong></div><div class="detail-row">◷ Last Sync: ${esc(v.lastSeen)}</div><div class="detail-row">➤ Current Status: ${esc(v.mapStatus)}</div></div><button class="primary-btn" data-page="car" data-vehicle="${esc(v.code)}">View Details</button><button class="secondary-btn" data-page="alerts" data-vehicle="${esc(v.code)}">Open Alerts</button></div></div>`);
+  return shell(`<h1 class="page-title">Live Vehicle Map</h1><div class="grid map-layout"><div class="panel"><div class="filter"><label>Vehicle</label><select class="select-control" id="mapFilter"><option>All Vehicles</option>${data.vehicles.map((x) => `<option ${x.code === state.mapVehicle ? 'selected' : ''}>${esc(x.code)}</option>`).join('')}</select></div><div id="liveMap" class="map-box" style="margin-top:18px" aria-label="Interactive vehicle map"></div></div><div class="panel vehicle-card"><h2>${esc(v.code)}</h2><div class="detail-list"><div class="detail-row">${connectedPill(v)}</div><div class="detail-row">♩ <strong>Audio Device ${esc(v.microphone)}</strong></div><div class="detail-row">◷ Last Sync: ${esc(v.lastSeen)}</div><div class="detail-row">➤ Current Status: ${esc(v.mapStatus)}</div></div><button class="primary-btn" data-page="car" data-vehicle="${esc(v.code)}">View Details</button><button class="secondary-btn" data-page="alerts" data-vehicle="${esc(v.code)}">Open Alerts</button></div></div>`);
+}
+
+let liveMap = null;
+
+function initLiveMap() {
+  const element = document.querySelector('#liveMap');
+  if (!element) return;
+  if (liveMap) { liveMap.remove(); liveMap = null; }
+  if (!window.L) {
+    element.innerHTML = '<div class="map-fallback">Map tiles could not load. Check your internet connection.</div>';
+    return;
+  }
+  const shown = data.vehicles.filter((v) => state.mapVehicle === 'All Vehicles' || v.code === state.mapVehicle);
+  const located = shown.filter((v) => v.latest?.location);
+  liveMap = window.L.map(element, { scrollWheelZoom: true, zoomControl: true }).setView([37.35, -121.92], 11);
+  window.L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19,
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+  }).addTo(liveMap);
+  const bounds = [];
+  located.forEach((vehicle) => {
+    const { latitude, longitude } = vehicle.latest.location;
+    const color = vehicle.status === 'maintenance' ? '#f29a0f' : vehicle.status === 'disconnected' ? '#8796ab' : '#1b7cf3';
+    window.L.circleMarker([latitude, longitude], { radius: 10, color: '#fff', weight: 3, fillColor: color, fillOpacity: 1 })
+      .addTo(liveMap)
+      .bindPopup(`<strong>${esc(vehicle.code)}</strong><br>${esc(vehicle.type)}<br>${esc(vehicle.mapStatus)}`)
+      .bindTooltip(esc(vehicle.code), { direction: 'top', offset: [0, -8] });
+    bounds.push([latitude, longitude]);
+  });
+  if (bounds.length > 1) liveMap.fitBounds(bounds, { padding: [45, 45], maxZoom: 14 });
+  else if (bounds.length === 1) liveMap.setView(bounds[0], 14);
+  else element.insertAdjacentHTML('beforeend', '<div class="map-fallback">No location data yet.</div>');
 }
 
 function alertPage() {
   const a = data.alert;
   const picker = data.live && data.alertList.length ? `<div class="filter" style="margin-bottom:18px"><label>Alert (${esc(state.vehicle)})</label><select class="select-control" id="alertPick">${data.alertList.map((x) => `<option value="${esc(x.id)}" ${x.id === state.alertId ? 'selected' : ''}>${esc(x.label)}</option>`).join('')}</select></div>` : '';
   if (!a) return shell(`<h1 class="page-title">Alert Details</h1><div class="panel"><p>No alerts have been raised for ${esc(state.vehicle)}.</p></div>`);
-  return shell(`<h1 class="page-title">Alert Details</h1>${picker}<div class="panel"><div class="alert-hero"><div class="alert-symbol">!</div><div><h2>${esc(a.title)}</h2><span class="status-pill ${a.tone}">${esc(a.severity)}</span>${a.isSimulation ? '<span class="status-pill amber">Simulation</span>' : ''}<div class="alert-meta" style="margin-top:18px"><span>▱ ${esc(data.live ? a.vehicle : state.vehicle)}</span><span>◷ ${esc(a.time)}</span><span>♩ ${esc(a.confidence)}</span><span>⌖ ${esc(a.location)}</span><span class="status-pill ${a.status === 'Resolved' ? 'green' : 'red'}">${esc(a.status)}</span></div></div></div><div class="action-row"><button class="primary-btn" id="ackBtn">✓ ${a.status === 'Resolved' ? 'Resolved' : 'Acknowledge Alert'}</button><button class="secondary-btn" id="resolveBtn">✓ Mark as Resolved</button><button class="secondary-btn" id="audioBtn">♩ View Audio Record</button></div></div><div class="grid two-col"><div class="panel"><h2 class="section-title">Detection Information</h2><div class="detail-list"><div class="detail-row">▣ <span>Model Version</span><strong>${esc(a.model)}</strong></div><div class="detail-row">◷ <span>Processing Time</span><strong>${esc(a.ms)}</strong></div><div class="detail-row">▤ <span>${a.isSimulation ? 'Simulation Event ID' : 'Audio Record ID'}</span><strong>${esc(a.audio)}</strong></div><div class="detail-row">ⓘ <span>Recommended Action</span><strong>Check vehicle surroundings and verify vehicle status.</strong></div></div></div><div class="panel"><h2 class="section-title">Alert Timeline</h2><div class="timeline"><div class="timeline-item"><span class="timeline-dot active"></span><div><strong>Detected</strong><div>${esc(a.time)}</div></div></div><div class="timeline-item"><span class="timeline-dot"></span><div><strong>Reviewed</strong><div>${esc(a.reviewed)}</div></div></div><div class="timeline-item"><span class="timeline-dot"></span><div><strong>Notification Sent</strong><div>-</div></div></div></div></div></div>`);
+  return shell(`<h1 class="page-title">Alert Details</h1>${picker}<div class="panel"><div class="alert-hero"><div class="alert-symbol">!</div><div><h2>${esc(a.title)}</h2><span class="status-pill ${a.tone}">${esc(a.severity)}</span>${a.isSimulation ? '<span class="status-pill amber">Simulation</span>' : ''}<div class="alert-meta" style="margin-top:18px"><span>▱ ${esc(data.live ? a.vehicle : state.vehicle)}</span><span>◷ ${esc(a.time)}</span><span>♩ ${esc(a.confidence)}</span><span>⌖ ${esc(a.location)}</span><span class="status-pill ${ALERT_TONE[a.statusKey] || 'blue'}">${esc(a.status)}</span></div></div></div><div class="action-row"><button class="primary-btn" id="ackBtn" ${a.statusKey !== 'open' ? 'disabled' : ''}>✓ ${a.statusKey === 'open' ? 'Acknowledge Alert' : a.status}</button><button class="secondary-btn" id="resolveBtn" ${a.statusKey === 'resolved' ? 'disabled' : ''}>✓ ${a.statusKey === 'resolved' ? 'Fixed' : 'Mark as Fixed'}</button><button class="secondary-btn" id="audioBtn">♩ View Audio Record</button></div></div><div class="grid two-col"><div class="panel"><h2 class="section-title">Detection Information</h2><div class="detail-list"><div class="detail-row">▣ <span>Model Used</span><strong>${esc(a.model)}</strong></div><div class="detail-row">◷ <span>Processing Time</span><strong>${esc(a.ms)}</strong></div><div class="detail-row">▤ <span>${a.isSimulation ? 'Simulation Event ID' : 'Audio Record ID'}</span><strong>${esc(a.audio)}</strong></div><div class="detail-row">ⓘ <span>Recommended Action</span><strong>Check vehicle surroundings and verify vehicle status.</strong></div></div></div><div class="panel"><h2 class="section-title">Alert Timeline</h2><div class="timeline"><div class="timeline-item"><span class="timeline-dot active"></span><div><strong>Detected</strong><div>${esc(a.time)}</div></div></div><div class="timeline-item"><span class="timeline-dot"></span><div><strong>Reviewed</strong><div>${esc(a.reviewed)}</div></div></div><div class="timeline-item"><span class="timeline-dot"></span><div><strong>Notification Sent</strong><div>-</div></div></div></div></div></div>`);
 }
 
 function carPage() {
@@ -297,12 +343,28 @@ function analytics() {
   let acc = 0;
   const stops = shownTypes.slice(0, 4).map((t, i) => { const from = (acc / total) * 100; acc += t.count; return `${DONUT_COLORS[i]} ${from}% ${(acc / total) * 100}%`; });
   const donut = data.live && total ? `style="background:conic-gradient(${stops.join(',')});--donut-label:'${total.toLocaleString()}\\A total events'"` : data.live ? 'style="background:#eaf2fb;--donut-label:\'0\\A total events\'"' : '';
-  const typeNames = ['Glass Break', 'Engine Noise', 'Cabin Noise', 'Horn', 'Crash', 'Normal'];
-  const dot = { red: '🔴', blue: '🔵', green: '🟢', amber: '🟠' };
+  const typeNames = [...new Set(data.byType.map((t) => t.name))];
   const option = (value, selected) => `<option ${value === selected ? 'selected' : ''}>${esc(value)}</option>`;
   const ranges = data.ranges.map((r) => option(r, state.filters.range || data.ranges[0])).join('');
-  const rows = shownTypes.length ? shownTypes.map((t) => `<tr><td>${dot[t.tone] || '🔵'} ${esc(t.name)}</td><td>${t.count}</td><td>${esc(t.conf)}</td><td>${esc(t.last)}</td></tr>`).join('') : emptyRow(4, 'No events recorded yet');
-  return shell(`<h1 class="page-title">Audio Event Analytics</h1><div class="panel"><div class="grid filters"><div class="filter"><label>Vehicle</label><select class="select-control" id="fVehicle"><option>All Vehicles</option>${data.vehicles.map((v) => option(v.code, state.filters.vehicle)).join('')}</select></div><div class="filter"><label>Date Range</label><select class="select-control" id="fRange">${ranges}</select></div><div class="filter"><label>Event Type</label><select class="select-control" id="fType"><option>All Types</option>${typeNames.map((t) => option(t, state.filters.type)).join('')}</select></div><button class="primary-btn" id="applyFilters">Apply Filters</button></div></div><div class="grid metrics" style="margin-top:18px">${metric(svgIcon('audio'), 'Total Events', s.events)}${metric(svgIcon('alert'), 'Critical Events', s.critical)}${metric(svgIcon('detection'), 'Average Confidence', s.confidence)}${metric(svgIcon('car'), 'Resolution Rate', s.resolution)}</div><div class="grid two-col" style="margin-top:18px"><div class="panel events-chart"><h2 class="section-title">Events Over Time</h2><div class="bar-chart" style="height:240px"><div class="bar-chart-inner">${data.overTime.map((b) => `<div class="bar" style="height:${b.h}%" title="${esc(b.tip || '')}"><span>${esc(b.label)}</span></div>`).join('')}</div></div></div><div class="panel"><h2 class="section-title">Events by Type</h2><div class="donut" ${donut}></div><div class="detail-list">${shownTypes.slice(0, 3).map((t) => `<div class="detail-row"><span class="status-pill ${t.tone}">${esc(t.name)}</span><strong>${t.count}</strong></div>`).join('')}</div></div></div><div class="panel" style="margin-top:18px"><h2 class="section-title">Top Detected Events</h2><div class="table-wrap"><table><thead><tr><th>Event Type</th><th>Count</th><th>Average Confidence</th><th>Last Detected</th></tr></thead><tbody>${rows}</tbody></table></div></div>`);
+  const recent = data.analyticsEvents.filter((event) => state.filters.type === 'All Types' || event.type === state.filters.type);
+  const rows = recent.length ? recent.map((event) => `<tr><td>${esc(event.type)}</td><td>${esc(event.vehicle)}</td><td>${esc(event.confidence)}</td><td><span class="status-pill ${ALERT_TONE[event.statusKey] || 'blue'}">${esc(event.status)}</span></td><td>${esc(event.model)}</td><td>${esc(event.detected)}</td></tr>`).join('') : emptyRow(6, 'No classified events recorded yet');
+  return shell(`<h1 class="page-title">Audio Event Analytics</h1><div class="panel"><div class="grid filters"><div class="filter"><label>Vehicle</label><select class="select-control" id="fVehicle"><option>All Vehicles</option>${data.vehicles.map((v) => option(v.code, state.filters.vehicle)).join('')}</select></div><div class="filter"><label>Date Range</label><select class="select-control" id="fRange">${ranges}</select></div><div class="filter"><label>Event Type</label><select class="select-control" id="fType"><option>All Types</option>${typeNames.map((t) => option(t, state.filters.type)).join('')}</select></div><button class="primary-btn" id="applyFilters">Apply Filters</button></div></div><div class="grid metrics" style="margin-top:18px">${metric(svgIcon('audio'), 'Total Events', s.events)}${metric(svgIcon('alert'), 'Critical Events', s.critical)}${metric(svgIcon('detection'), 'Average Confidence', s.confidence)}${metric(svgIcon('car'), 'Resolution Rate', s.resolution)}</div><div class="grid two-col" style="margin-top:18px"><div class="panel events-chart"><h2 class="section-title">Events Over Time</h2><div class="bar-chart" style="height:240px"><div class="bar-chart-inner">${data.overTime.map((b) => `<div class="bar" style="height:${b.h}%" title="${esc(b.tip || '')}"><span>${esc(b.label)}</span></div>`).join('')}</div></div></div><div class="panel"><h2 class="section-title">Events by Type</h2><div class="donut" ${donut}></div><div class="detail-list">${shownTypes.slice(0, 3).map((t) => `<div class="detail-row"><span class="status-pill ${t.tone}">${esc(t.name)}</span><strong>${t.count}</strong></div>`).join('')}</div></div></div><div class="panel" style="margin-top:18px"><h2 class="section-title">Recent Classified Events</h2><div class="table-wrap"><table><thead><tr><th>Event Type</th><th>Vehicle</th><th>Confidence</th><th>Status</th><th>Model Used</th><th>Detected</th></tr></thead><tbody>${rows}</tbody></table></div></div>`);
+}
+
+function adminPage() {
+  if (state.user?.role !== 'admin') return shell('<h1 class="page-title">Admin</h1><div class="panel"><p>Administrator access required.</p></div>');
+  const usersById = new Map(data.users.map((user) => [user.id, user]));
+  const deviceCounts = new Map();
+  data.devices.forEach((device) => deviceCounts.set(device.vehicle_code, (deviceCounts.get(device.vehicle_code) || 0) + 1));
+  const vehicleRows = data.vehicleRecords.map((vehicle) => {
+    const owner = usersById.get(vehicle.owner_id);
+    return `<tr><td>${esc(vehicle.vehicle_code)}</td><td>${esc(vehicle.vehicle_type)}</td><td>${esc(owner?.name || 'Unassigned')}</td><td>${esc(owner?.email || '—')}</td><td>${deviceCounts.get(vehicle.vehicle_code) || 0}</td><td>${statePill(vehicle.status)}</td></tr>`;
+  }).join('') || emptyRow(6, 'No vehicles registered.');
+  const userRows = data.users.map((user) => {
+    const owned = data.vehicleRecords.filter((vehicle) => vehicle.owner_id === user.id).map((vehicle) => vehicle.vehicle_code).join(', ') || '—';
+    return `<tr><td>${esc(user.name)}</td><td>${esc(user.email)}</td><td>${statePill(user.role === 'admin' ? 'Admin' : 'Customer')}</td><td>${esc(owned)}</td></tr>`;
+  }).join('') || emptyRow(4, 'No accounts found.');
+  return shell(`<h1 class="page-title">Administration</h1><div class="management-grid"><form class="panel data-form" id="adminUserForm"><h2 class="section-title">Create account</h2><label>Full name<input name="name" required maxlength="120"></label><label>Email<input name="email" type="email" required></label><label>Temporary password<input name="password" type="password" minlength="8" required></label><label>Account type<select name="role"><option value="user">Customer</option><option value="admin">Admin</option></select></label><button class="primary-btn">Create account</button><p class="help-text">Public registration always creates a customer. Only an admin can create another admin.</p></form><section class="panel"><h2 class="section-title">Access model</h2><div class="detail-list"><div class="detail-row"><strong>Customers</strong><span>View assigned vehicles, devices, telemetry, alerts, and analytics.</span></div><div class="detail-row"><strong>Admins</strong><span>Register and manage vehicles/devices, send test heartbeats, simulate audio, and control lifecycle.</span></div></div></section></div><section class="panel activity"><h2 class="section-title">Registered accounts</h2><div class="table-wrap"><table><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Owned vehicles</th></tr></thead><tbody>${userRows}</tbody></table></div></section><section class="panel activity"><h2 class="section-title">Fleet ownership and devices</h2><div class="table-wrap"><table><thead><tr><th>Vehicle</th><th>Type</th><th>Associated user</th><th>User email</th><th>IoT devices</th><th>Status</th></tr></thead><tbody>${vehicleRows}</tbody></table></div></section>`);
 }
 
 function fleetPage() {
@@ -321,7 +383,7 @@ function login(register = false) { return `<main class="auth-shell ${register ? 
 // ---------------------------------------------------------------------------
 // Rendering, navigation and actions
 // ---------------------------------------------------------------------------
-const pages = { dashboard, fleet: fleetPage, map: mapPage, alerts: alertPage, car: carPage };
+const pages = { dashboard, fleet: fleetPage, map: mapPage, alerts: alertPage, car: carPage, admin: adminPage };
 
 function render() {
   if (!state.user) { app.innerHTML = login(false); bind(); return; }
@@ -458,15 +520,35 @@ async function fleetAction(action, successMessage = '') {
 function formObject(form) { return Object.fromEntries(new FormData(form)); }
 
 function bindFleet() {
+  const isAdmin = state.user?.role === 'admin';
+  const vehicleCreateForm = document.querySelector('#vehicleCreateForm');
+  if (isAdmin && vehicleCreateForm && !vehicleCreateForm.querySelector('[name="owner_id"]')) {
+    const ownerLabel = document.createElement('label');
+    ownerLabel.innerHTML = `Associated customer<select name="owner_id"><option value="">Admin / unassigned</option>${data.users.filter((user) => user.role !== 'admin').map((user) => `<option value="${esc(user.id)}">${esc(user.name)} · ${esc(user.email)}</option>`).join('')}</select>`;
+    vehicleCreateForm.insertBefore(ownerLabel, vehicleCreateForm.querySelector('button'));
+  }
+  if (!isAdmin) {
+    ['#vehicleCreateForm', '#vehicleUpdateForm', '#deviceCreateForm', '#deviceUpdateForm', '#deviceConfigurationForm', '#audioSimulationForm', '#heartbeatForm'].forEach((selector) => document.querySelector(selector)?.remove());
+    ['#removeVehicleBtn', '#disableDeviceBtn', '#retireDeviceBtn', '#removeDeviceBtn', '#recordBtn', '#pauseBtn', '#captureToggle', '#modeSelect', '#ackBtn', '#resolveBtn'].forEach((selector) => {
+      const control = document.querySelector(selector);
+      if (control) { control.disabled = true; control.title = 'Administrator access required'; }
+    });
+  }
+  const audioForm = document.querySelector('#audioSimulationForm');
+  if (audioForm && !audioForm.querySelector('[name="modelId"]')) {
+    const label = document.createElement('label');
+    label.innerHTML = `Classification model<select name="modelId" class="select-control">${data.audioModels.map((model) => `<option value="${esc(model.id)}" ${model.available ? '' : 'disabled'}>${esc(model.name)} · ${esc(model.version)}${model.available ? '' : ' (unavailable)'}</option>`).join('') || '<option value="default">Configured default model</option>'}</select>`;
+    audioForm.insertBefore(label, audioForm.querySelector('label'));
+  }
   document.querySelectorAll('[data-device-id]').forEach((button) => button.addEventListener('click', async () => { state.deviceId = button.dataset.deviceId; await show(); }));
-  document.querySelector('#vehicleCreateForm')?.addEventListener('submit', (event) => { event.preventDefault(); const values = formObject(event.currentTarget); values.vin = values.vin.toUpperCase(); values.license_plate = values.license_plate.toUpperCase(); fleetAction(async () => { const created = await api.createVehicle({ ...values, status: 'disconnected' }); state.vehicle = created.vehicle_code; state.deviceId = null; }, 'Vehicle registered.'); });
+  document.querySelector('#vehicleCreateForm')?.addEventListener('submit', (event) => { event.preventDefault(); const values = formObject(event.currentTarget); values.vin = values.vin.toUpperCase(); values.license_plate = values.license_plate.toUpperCase(); if (!values.owner_id) delete values.owner_id; fleetAction(async () => { const created = await api.createVehicle({ ...values, status: 'disconnected' }); state.vehicle = created.vehicle_code; state.deviceId = null; }, 'Vehicle registered.'); });
   document.querySelector('#vehicleUpdateForm')?.addEventListener('submit', (event) => { event.preventDefault(); const values = formObject(event.currentTarget); values.vin = values.vin.toUpperCase(); values.license_plate = values.license_plate.toUpperCase(); fleetAction(() => api.updateVehicle(state.vehicle, values), 'Vehicle updated.'); });
   document.querySelector('#removeVehicleBtn')?.addEventListener('click', () => { if (confirm('Remove this vehicle? Associated devices will be detached and retired.')) fleetAction(async () => { await api.removeVehicle(state.vehicle); state.deviceId = null; }, 'Vehicle removed; device history was retained.'); });
   document.querySelector('#deviceCreateForm')?.addEventListener('submit', (event) => { event.preventDefault(); const values = formObject(event.currentTarget); if (!values.firmware_version) values.firmware_version = null; fleetAction(async () => { const created = await api.createDevice(state.vehicle, values); state.deviceId = created.id; }, 'Device registered in PENDING state.'); });
   document.querySelector('#deviceUpdateForm')?.addEventListener('submit', (event) => { event.preventDefault(); const values = formObject(event.currentTarget); if (!values.firmware_version) values.firmware_version = null; fleetAction(() => api.updateDevice(state.deviceId, values), 'Device updated.'); });
   document.querySelector('#deviceConfigurationForm')?.addEventListener('submit', (event) => { event.preventDefault(); const form = new FormData(event.currentTarget); const configuration = { captureEnabled: form.has('captureEnabled'), monitoringMode: form.get('monitoringMode'), heartbeatIntervalSeconds: Number(form.get('heartbeatIntervalSeconds')) }; fleetAction(() => api.updateDeviceConfiguration(state.deviceId, configuration), 'Device settings updated.'); });
   document.querySelector('#heartbeatForm')?.addEventListener('submit', (event) => { event.preventDefault(); const form = new FormData(event.currentTarget); const metrics = {}; if (form.get('batteryPercent')) metrics.batteryPercent = Number(form.get('batteryPercent')); if (form.get('temperatureCelsius')) metrics.temperatureCelsius = Number(form.get('temperatureCelsius')); fleetAction(() => api.heartbeat(state.deviceId, { health: form.get('health'), metrics }), 'Heartbeat received.'); });
-  document.querySelector('#audioSimulationForm')?.addEventListener('submit', async (event) => { event.preventDefault(); const form = new FormData(event.currentTarget); const audio = form.get('audio'); if (!(audio instanceof File) || !audio.size) { state.notice = 'Choose a WAV file first.'; return render(); } try { const result = await api.classifyDeviceAudio(state.deviceId, audio, String(form.get('location') || '').trim()); await loadData(); const alert = result.alertId ? ' · simulated alert created' : ' · no alert (normal or below threshold)'; state.notice = `${cap(result.eventType)} · ${percent(result.confidence * 100)} confidence · ${result.modelVersion}${alert}`; render(); } catch (err) { if (err.status === 401) return endSession('Your session has expired. Please sign in again.'); state.notice = err.message; render(); } });
+  document.querySelector('#audioSimulationForm')?.addEventListener('submit', async (event) => { event.preventDefault(); const form = new FormData(event.currentTarget); const audio = form.get('audio'); if (!(audio instanceof File) || !audio.size) { state.notice = 'Choose a WAV file first.'; return render(); } try { const result = await api.classifyDeviceAudio(state.deviceId, audio, String(form.get('location') || '').trim(), String(form.get('modelId') || 'default')); await loadData(); const alert = result.alertId ? ' · simulated alert created' : ' · no alert (normal or below threshold)'; state.notice = `${cap(result.eventType)} · ${percent(result.confidence * 100)} confidence · ${result.modelName} ${result.modelVersion}${alert}`; render(); } catch (err) { if (err.status === 401) return endSession('Your session has expired. Please sign in again.'); state.notice = err.message; render(); } });
   document.querySelector('#disableDeviceBtn')?.addEventListener('click', () => { if (confirm('Disable this device? Heartbeats will not reactivate it.')) fleetAction(() => api.updateDevice(state.deviceId, { state: 'DISABLED' }), 'Device disabled.'); });
   document.querySelector('#retireDeviceBtn')?.addEventListener('click', () => { if (confirm('Retire this device permanently?')) fleetAction(() => api.updateDevice(state.deviceId, { state: 'RETIRED' }), 'Device retired.'); });
   document.querySelector('#removeDeviceBtn')?.addEventListener('click', () => { if (confirm('Remove this device from active inventory while preserving history?')) fleetAction(async () => { await api.removeDevice(state.deviceId); state.deviceId = null; }, 'Device removed; heartbeat history was retained.'); });
@@ -496,7 +578,9 @@ function bind() {
   document.querySelector('#refreshBtn')?.addEventListener('click', async () => { await reload(); if (!state.notice && data.live) state.notice = 'Status refreshed.'; render(); });
   document.querySelector('#mapFilter')?.addEventListener('change', (e) => { state.mapVehicle = e.target.value; if (state.mapVehicle !== 'All Vehicles') state.vehicle = state.mapVehicle; render(); });
   document.querySelector('#applyFilters')?.addEventListener('click', () => { state.filters = { vehicle: field('#fVehicle'), range: field('#fRange'), type: field('#fType') }; show(); });
+  document.querySelector('#adminUserForm')?.addEventListener('submit', (event) => { event.preventDefault(); const values = formObject(event.currentTarget); fleetAction(() => api.createUser(values), `${cap(values.role === 'admin' ? 'admin' : 'customer')} account created.`); });
   bindFleet();
+  initLiveMap();
 }
 
 window.addEventListener('hashchange', () => { const page = location.hash.replace('#/', '') || 'dashboard'; if (state.user && page !== state.page) { state.page = page; show(); } });

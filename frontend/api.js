@@ -1,7 +1,9 @@
 // Backend client for the Smart Car Data Management API.
 // Network failures are reported as ApiError with status 0 so the UI can fall back to mock data.
 
-const API_BASE_URL = window.API_BASE_URL || 'http://localhost:8000/api/v1';
+// Use the same explicit IPv4 address Uvicorn binds to in the development command. On Windows,
+// `localhost` may resolve to IPv6 (::1) while Uvicorn is listening only on 127.0.0.1.
+const API_BASE_URL = window.API_BASE_URL || 'http://127.0.0.1:8000/api/v1';
 const TOKEN_KEY = 'smartcar.token';
 
 export class ApiError extends Error {
@@ -79,6 +81,8 @@ export const api = {
     try { await post('/auth/logout'); } finally { tokenStore.clear(); }
   },
   me: () => apiRequest('/auth/me'),
+  users: () => apiRequest('/users'),
+  createUser: (user) => post('/users', user),
 
   // Vehicles
   vehicles: () => apiRequest('/vehicles'),
@@ -100,10 +104,12 @@ export const api = {
   heartbeat: (id, heartbeat) => post(`/devices/${encodeURIComponent(id)}/heartbeat`, heartbeat),
   deviceHeartbeats: (id, params) => apiRequest(`/devices/${encodeURIComponent(id)}/heartbeats${queryString(params)}`),
   removeDevice: (id) => apiRequest(`/devices/${encodeURIComponent(id)}`, { method: 'DELETE' }),
-  classifyDeviceAudio: (id, audio, location = '') => {
+  audioModels: () => apiRequest('/devices/audio-models'),
+  classifyDeviceAudio: (id, audio, location = '', modelId = 'default') => {
     const body = new FormData();
     body.append('audio', audio);
     if (location) body.append('location', location);
+    body.append('model_id', modelId);
     return apiRequest(`/devices/${encodeURIComponent(id)}/classify-audio`, { method: 'POST', body });
   },
 

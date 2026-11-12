@@ -198,6 +198,13 @@ class DeviceConfigurationUpdate(BaseModel):
     configuration: DeviceConfiguration
 
 
+class AudioModelOption(BaseModel):
+    id: str
+    name: str
+    version: str
+    available: bool = True
+
+
 class SimulatedAudioEvent(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
@@ -210,6 +217,7 @@ class SimulatedAudioEvent(BaseModel):
     timestamp: datetime
     location: str | None = None
     is_simulation: bool = Field(default=True, alias="isSimulation")
+    model_name: str = Field(alias="modelName")
     model_version: str = Field(alias="modelVersion")
     processing_timestamp: datetime = Field(alias="processingTimestamp")
     alert_id: UUID | None = Field(default=None, alias="alertId")

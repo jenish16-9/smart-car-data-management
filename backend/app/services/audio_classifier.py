@@ -174,6 +174,27 @@ def configure_default_classifier(backend: str, model_path: str) -> None:
         raise RuntimeError(reason) from exc
 
 
+def available_models() -> list[dict[str, str | bool]]:
+    """Models selectable by API clients; additional adapters can be registered here later."""
+    return [
+        {
+            "id": "default",
+            "name": default_classifier.model_name,
+            "version": default_classifier.model_version,
+            "available": not isinstance(default_classifier, UnavailableAudioClassifier),
+        }
+    ]
+
+
+def validate_model_selection(model_id: str) -> None:
+    """Reject unknown model identifiers instead of silently using a different classifier."""
+    selected = next((model for model in available_models() if model["id"] == model_id), None)
+    if selected is None:
+        raise ValueError(f"Unsupported audio model: {model_id}")
+    if not selected["available"]:
+        raise RuntimeError(f"Audio model {model_id} is currently unavailable")
+
+
 def classify_audio(audio: str | bytes | FeatureValues | AudioClassificationInput) -> AudioClassificationResult:
     """Compatibility entry point used by the service and existing model adapters."""
     if isinstance(audio, AudioClassificationInput):

@@ -30,6 +30,20 @@ async def register(session: AsyncSession, payload: RegisterRequest) -> User:
     return user
 
 
+async def create_user_by_admin(session: AsyncSession, *, name: str, email: str, password: str, role: str) -> User:
+    if await user_repository.get_by_email(session, email):
+        raise ConflictError("An account with this email already exists")
+    user = await user_repository.create(
+        session,
+        name=name.strip(),
+        email=email,
+        password_hash=hash_password(password),
+        role=role,
+    )
+    await session.commit()
+    return user
+
+
 async def login(session: AsyncSession, email: str, password: str) -> LoginResponse:
     user = await user_repository.get_by_email(session, email)
     password_hash = user.password_hash if user else dummy_hash()

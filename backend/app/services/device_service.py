@@ -170,6 +170,7 @@ async def controls(session: AsyncSession, user: User, device_id: str) -> Device:
 async def update_controls(
     session: AsyncSession, mongo: AsyncIOMotorDatabase, user: User, device_id: str, payload: DeviceControlsUpdate
 ) -> Device:
+    _require_admin(user)
     device, code = await get_accessible(session, user, device_id)
     require_controllable(device)
     changes = vehicle_service.control_changes(device, payload)
@@ -210,6 +211,7 @@ async def heartbeat(
         vehicle = await vehicle_repository.get_by_ref(session, str(device.vehicle_id))
         code = vehicle.vehicle_code if vehicle else ""
     elif user is not None:
+        _require_admin(user)
         device, code = await get_accessible(session, user, device_id)
     else:
         raise ForbiddenError("Authentication required")
@@ -331,13 +333,16 @@ async def classify_simulated_audio(
     audio_bytes: bytes,
     *,
     location: str | None = None,
+    model_id: str = "default",
 ) -> SimulatedAudioEvent:
+    _require_admin(user)
     device, vehicle_code = await get_accessible(session, user, device_id)
     if device.status in {"DISABLED", "RETIRED"}:
         raise ConflictError(f"{device.status.title()} device rejects audio event data")
     if device.vehicle_id is None:
         raise ConflictError("Device is not associated with a vehicle")
     try:
+        audio_classifier.validate_model_selection(model_id)
         result = audio_classifier.classify_audio(audio_bytes)
     except (RuntimeError, ValueError) as exc:
         raise UnprocessableError(f"Audio classification failed: {exc}") from exc
@@ -384,6 +389,7 @@ async def classify_simulated_audio(
         timestamp=timestamp,
         location=location,
         isSimulation=True,
+        modelName=result.model_name,
         modelVersion=result.model_version,
         processingTimestamp=result.processing_timestamp,
         alertId=alert_id,

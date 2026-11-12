@@ -83,17 +83,31 @@ async def test_users_only_see_their_assigned_vehicles(client, admin_headers, use
     assert len((await client.get("/vehicles", headers=admin_headers)).json()) == 2
 
 
-async def test_regular_user_cannot_assign_others(client, user_headers):
+async def test_regular_user_cannot_register_vehicle(client, user_headers):
     response = await client.post(
         "/vehicles",
-        json={
-            "vehicle_code": "CAR-C",
-            "vehicle_type": "Sedan",
-            "assigned_user_ids": ["00000000-0000-0000-0000-000000000001"],
-        },
+        json={"vehicle_code": "CAR-C", "vehicle_type": "Sedan"},
         headers=user_headers,
     )
     assert response.status_code == 403
+
+
+async def test_customer_has_read_only_vehicle_access(client, admin_headers, user_headers):
+    customer = (await client.get("/users/me", headers=user_headers)).json()
+    created = await client.post(
+        "/vehicles",
+        json={"vehicle_code": "CAR-READONLY", "vehicle_type": "Sedan", "owner_id": customer["id"]},
+        headers=admin_headers,
+    )
+    assert created.status_code == 201
+    assert (await client.get("/vehicles/CAR-READONLY", headers=user_headers)).status_code == 200
+    assert (
+        await client.patch("/vehicles/CAR-READONLY", json={"status": "maintenance"}, headers=user_headers)
+    ).status_code == 403
+    assert (
+        await client.patch("/vehicles/CAR-READONLY/controls", json={"recording": True}, headers=user_headers)
+    ).status_code == 403
+    assert (await client.delete("/vehicles/CAR-READONLY", headers=user_headers)).status_code == 403
 
 
 async def test_delete_vehicle_is_a_soft_delete_that_keeps_history(client, admin_headers, vehicle, sessionmaker):
@@ -169,7 +183,7 @@ async def test_device_control_conflicts_and_access(client, admin_headers, user_h
     assert conflict.status_code == 409
     assert (
         await client.patch("/vehicles/CAR-1024/controls", json={"recording": False}, headers=user_headers)
-    ).status_code == 404
+    ).status_code == 403
     assert (
         await client.patch("/vehicles/CAR-1024/controls", json={"monitoring_mode": "bogus"}, headers=admin_headers)
     ).status_code == 422

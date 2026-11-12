@@ -28,7 +28,8 @@ class AudioStatusUpdate(BaseModel):
 
 
 class AnalysisOut(BaseModel):
-    audio_record_id: str
+    audio_record_id: str | None = None
+    event_id: str | None = None
     vehicle_id: str
     model_name: str
     model_version: str

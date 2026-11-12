@@ -12,6 +12,7 @@ from app.db.mongodb import get_mongo_db
 from app.db.postgres import get_session
 from app.models.user import User
 from app.schemas.device import (
+    AudioModelOption,
     DeviceConfigurationUpdate,
     DeviceControlState,
     DeviceControlsUpdate,
@@ -24,7 +25,7 @@ from app.schemas.device import (
     HeartbeatOut,
     SimulatedAudioEvent,
 )
-from app.services import device_service
+from app.services import audio_classifier, device_service
 
 router = APIRouter(prefix="/devices", tags=["Devices"])
 
@@ -57,6 +58,12 @@ async def list_devices(
         limit=limit,
         offset=offset,
     )
+
+
+@router.get("/audio-models", response_model=list[AudioModelOption])
+async def list_audio_models(_: User = Depends(get_current_user)) -> list[AudioModelOption]:
+    """List classifiers available to the simulation form."""
+    return [AudioModelOption(**item) for item in audio_classifier.available_models()]
 
 
 @router.get("/{device_id}", response_model=DeviceOut)
@@ -185,6 +192,7 @@ async def classify_audio(
     device_id: str,
     audio: UploadFile = File(...),
     location: str | None = Form(default=None, max_length=200),
+    model_id: str = Form(default="default", max_length=80),
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
     mongo: AsyncIOMotorDatabase = Depends(get_mongo_db),
@@ -201,5 +209,5 @@ async def classify_audio(
     if not audio_bytes.startswith(b"RIFF") or audio_bytes[8:12] != b"WAVE":
         raise UnprocessableError("Audio file must be a valid WAV container")
     return await device_service.classify_simulated_audio(
-        session, mongo, user, device_id, audio_bytes, location=location or None
+        session, mongo, user, device_id, audio_bytes, location=location or None, model_id=model_id
     )

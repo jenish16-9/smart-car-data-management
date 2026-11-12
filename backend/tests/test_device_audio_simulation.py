@@ -67,11 +67,36 @@ async def test_device_audio_upload_classifies_and_preserves_simulation(
     assert stored["predicted_class"] == "glass_breaking"
     assert stored["is_simulation"] is True
 
-    alert = (await client.get(f"/alerts/{event['alertId']}", headers=admin_headers)).json()
+    # Simulation analysis can be keyed only by event_id (there is no real audio record).
+    await mongo_db["audio_analysis_results"].update_one(
+        {"event_id": event["eventId"]}, {"$unset": {"audio_record_id": ""}}
+    )
+
+    detail = await client.get(f"/alerts/{event['alertId']}", headers=admin_headers)
+    assert detail.status_code == 200, detail.text
+    alert = detail.json()
     assert alert["is_simulation"] is True
     assert alert["simulation_event_id"] == event["eventId"]
     assert alert["audio_record_id"] is None
     assert alert["analysis"]["model_version"] == "baseline-test-1"
+    assert alert["analysis"]["event_id"] == event["eventId"]
+
+
+async def test_audio_model_discovery_and_selection_validation(client, admin_headers, vehicle):
+    models = await client.get("/devices/audio-models", headers=admin_headers)
+    assert models.status_code == 200
+    assert models.json()[0]["id"] == "default"
+    assert {"name", "version", "available"} <= models.json()[0].keys()
+
+    device = await register_device(client, admin_headers, vehicle, "AUDIO-MODEL-SELECT")
+    unsupported = await client.post(
+        f"/devices/{device['id']}/classify-audio",
+        files={"audio": ("demo.wav", wav_bytes(), "audio/wav")},
+        data={"model_id": "future-model"},
+        headers=admin_headers,
+    )
+    assert unsupported.status_code == 422
+    assert unsupported.json()["detail"] == "Audio classification failed: Unsupported audio model: future-model"
 
 
 async def test_device_audio_upload_enforces_access_format_and_lifecycle(
@@ -86,7 +111,7 @@ async def test_device_audio_upload_enforces_access_format_and_lifecycle(
         files={"audio": ("demo.wav", wav_bytes(), "audio/wav")},
         headers=user_headers,
     )
-    assert forbidden.status_code == 404
+    assert forbidden.status_code == 403
 
     invalid = await client.post(
         endpoint,

@@ -54,8 +54,11 @@ async def test_register_requires_authentication_and_admin(client, user_headers, 
 
 
 async def test_vehicle_scoped_registration_is_admin_only(client, admin_headers, user_headers):
+    owner = (await client.get("/users/me", headers=user_headers)).json()
     owned = await client.post(
-        "/vehicles", json={"vehicle_code": "CAR-OWNER", "vehicle_type": "Sedan"}, headers=user_headers
+        "/vehicles",
+        json={"vehicle_code": "CAR-OWNER", "vehicle_type": "Sedan", "owner_id": owner["id"]},
+        headers=admin_headers,
     )
     assert owned.status_code == 201
     body = {"hardware_id": "NESTED-0001", "device_type": "microphone"}
@@ -105,6 +108,14 @@ async def test_users_only_see_devices_of_their_vehicles(client, admin_headers, u
     patch = await client.patch(f"/devices/{mine.json()['id']}", json={"device_name": "x"}, headers=user_headers)
     assert patch.status_code == 403
     assert (await client.delete(f"/devices/{mine.json()['id']}", headers=user_headers)).status_code == 403
+    assert (await beat(client, mine.json(), headers=user_headers)).status_code == 403
+    assert (
+        await client.post(
+            f"/devices/{mine.json()['id']}/classify-audio",
+            files={"audio": ("demo.wav", b"RIFF0000WAVE", "audio/wav")},
+            headers=user_headers,
+        )
+    ).status_code == 403
 
 
 # --- heartbeats ---------------------------------------------------------------------------------------------------

@@ -174,9 +174,12 @@ cd frontend
 python3 -m http.server 5173
 ```
 
-Open <http://localhost:5173>. The frontend calls `http://localhost:8000/api/v1` (override with
+Open <http://127.0.0.1:5173>. The frontend calls `http://127.0.0.1:8000/api/v1` (override with
 `window.API_BASE_URL` before `app.js` loads). **Signing in always requires a registered account and a reachable backend.** If the backend becomes unreachable after sign-in, the UI keeps
 working on built-in sample data and shows a notice at the top of the page.
+
+The Live Map uses Leaflet 1.9.4 with OpenStreetMap tiles for pan, scroll-wheel zoom, zoom controls,
+vehicle markers, and popups. It needs internet access for map tiles but does not require an API key.
 
 ## Demo data (10 vehicles)
 
@@ -188,8 +191,17 @@ python -m app.db.seed_demo        # development only; safe to re-run
 Creates CAR-1024 … CAR-1033 with different types, statuses (connected / disconnected / maintenance),
 GPS positions, uptime, battery, engine/microphone states, MongoDB telemetry and alerts (only where
 it makes sense, e.g. CAR-1026 and CAR-1028 have none). Existing vehicles are never overwritten.
-It also creates a non-admin `driver@example.com` assigned to CAR-1024 … CAR-1029 to demonstrate
-access control; its random password is printed once when it is created.
+It can also create a non-admin `driver@example.com` assigned to CAR-1024 … CAR-1029 to demonstrate
+access control when `DEMO_DRIVER_PASSWORD` is set; the password is never printed by the seed.
+
+For the smaller Shri presentation fleet (Tesla Model 3 and Toyota Corolla in Santa Clara/San José), set a temporary
+password and run the idempotent two-database seed. It creates `shri.demo@example.com`, six IoT devices, telemetry,
+and mixed-status simulated alerts with matching analytics records:
+
+```powershell
+$env:SHRI_DEMO_PASSWORD = "choose-a-demo-password"
+.\.venv\Scripts\python.exe -m scripts.seed_shri_demo
+```
 
 ## Development login
 
@@ -200,7 +212,24 @@ password: admin123
 
 Created at startup from `DEV_ADMIN_EMAIL` / `DEV_ADMIN_PASSWORD` in `.env` when
 `ENVIRONMENT=development` (copy `.env.example`). Never use these in a real deployment.
-Self-registration always creates a regular `user`.
+Self-registration always creates a regular customer account; allowing a public caller to select
+`admin` would be a privilege-escalation vulnerability. A logged-in administrator can create either
+a customer or another administrator from the dashboard's **Admin** page.
+
+To bootstrap the first development administrator without storing its password in source control,
+set temporary environment variables and run the helper from `backend/`:
+
+```powershell
+$env:ADMIN_EMAIL = "admin@example.com"
+$env:ADMIN_PASSWORD = "choose-a-strong-temporary-password"
+$env:ADMIN_NAME = "AudioGuard Admin"
+.\.venv\Scripts\python.exe -m scripts.create_admin
+```
+
+Customers have read-only access to vehicles and IoT devices assigned to them. Administrators can
+register and manage vehicles/devices, choose the associated customer, send test heartbeats,
+simulate audio events, and control vehicle/device lifecycle. The Admin page shows all registered
+accounts, vehicles, devices, and their ownership associations.
 
 ## API endpoints
 
@@ -209,8 +238,8 @@ All under `/api/v1` and protected by a `Bearer` JWT unless marked public.
 | Area | Endpoints |
 | --- | --- |
 | Auth | `POST /auth/register` (public), `POST /auth/login` (public), `POST /auth/logout`, `GET /auth/me` |
-| Users | `GET /users/me`, `PATCH /users/me` |
-| Vehicles | `POST /vehicles`, `GET /vehicles`, `GET /vehicles/{id}`, `PATCH /vehicles/{id}`, `DELETE /vehicles/{id}` (soft delete), `POST/GET /vehicles/{id}/devices`, `PATCH /vehicles/{id}/controls` (acts on the vehicle's default device), `GET /vehicles/{id}/logs` (device activity) |
+| Users | `GET /users/me`, `PATCH /users/me`; admin-only `GET /users`, `POST /users` (create customer/admin) |
+| Vehicles | Admin-only `POST /vehicles`, `PATCH /vehicles/{id}`, `DELETE /vehicles/{id}` (soft delete), `POST /vehicles/{id}/devices`, and `PATCH /vehicles/{id}/controls`; authorized customers may use `GET /vehicles`, `GET /vehicles/{id}`, `GET /vehicles/{id}/devices`, and `GET /vehicles/{id}/logs` |
 | Devices | `POST /devices` (admin), `GET /devices?vehicle_id=&status=&include_retired=`, `GET/PATCH /devices/{id}` (PATCH admin), `DELETE /devices/{id}` (admin, soft removal), `PUT /devices/{id}/configuration`, `POST /devices/{id}/rotate-key` (admin), `GET/PATCH /devices/{id}/status`, `POST /devices/{id}/recording/start\|stop`, `POST /devices/{id}/monitoring/pause\|resume`, `POST /devices/{id}/heartbeat`, `GET /devices/{id}/heartbeats?start=&end=&limit=&offset=`, `POST /devices/{id}/classify-audio` (WAV simulation) |
 | Audio | `POST /audio`, `GET /audio`, `GET /audio/{id}`, `PATCH /audio/{id}/status` |
 | Alerts | `POST /alerts`, `GET /alerts`, `GET /alerts/{id}`, `POST /alerts/{id}/acknowledge`, `POST /alerts/{id}/resolve` |

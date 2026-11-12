@@ -17,6 +17,10 @@ async def get_by_email(session: AsyncSession, email: str) -> User | None:
     return result.scalar_one_or_none()
 
 
+async def list_users(session: AsyncSession) -> list[User]:
+    return list((await session.execute(select(User).order_by(User.name, User.email))).scalars().all())
+
+
 async def create(session: AsyncSession, *, name: str, email: str, password_hash: str, role: str) -> User:
     user = User(name=name, email=email.lower(), password_hash=password_hash, role=role)
     session.add(user)

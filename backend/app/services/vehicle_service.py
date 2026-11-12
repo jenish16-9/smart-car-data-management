@@ -12,6 +12,11 @@ from app.schemas.vehicle import DeviceLogOut, VehicleControlsUpdate, VehicleCrea
 from app.services.device_rules import default_device, require_controllable
 
 
+def _require_admin(user: User) -> None:
+    if user.role != "admin":
+        raise ForbiddenError("Administrator access required")
+
+
 async def get_accessible(session: AsyncSession, user: User, ref: str) -> Vehicle:
     """Return the vehicle, or 404 if it does not exist or the user may not see it."""
     vehicle = await vehicle_repository.get_by_ref(session, ref)
@@ -46,9 +51,7 @@ async def _require_user(session: AsyncSession, user_id) -> None:
 
 
 async def create_vehicle(session: AsyncSession, user: User, payload: VehicleCreate) -> Vehicle:
-    is_admin = user.role == "admin"
-    if not is_admin and (payload.owner_id not in (None, user.id) or payload.assigned_user_ids):
-        raise ForbiddenError("Only administrators can set another owner or assign users")
+    _require_admin(user)
     if await vehicle_repository.get_by_ref(session, payload.vehicle_code):
         raise ConflictError(f"Vehicle {payload.vehicle_code} already exists (it may be deactivated)")
     await _require_unique_identifiers(session, vin=payload.vin, license_plate=payload.license_plate)
@@ -88,8 +91,7 @@ async def list_vehicles(
 
 
 async def _require_manage(user: User, vehicle: Vehicle) -> None:
-    if user.role != "admin" and vehicle.owner_id != user.id:
-        raise ForbiddenError("Only the vehicle owner or an administrator can modify this vehicle")
+    _require_admin(user)
 
 
 async def update_vehicle(session: AsyncSession, user: User, ref: str, payload: VehicleUpdate) -> Vehicle:
@@ -168,6 +170,7 @@ def control_changes(device, payload: VehicleControlsUpdate | DeviceControlsUpdat
 async def update_controls(
     session: AsyncSession, mongo: AsyncIOMotorDatabase, user: User, ref: str, payload: VehicleControlsUpdate
 ) -> Vehicle:
+    _require_admin(user)
     vehicle = await get_accessible(session, user, ref)
     # Controls belong to a device; vehicle-level calls act on the vehicle's default device
     # (or on the legacy device_status row for vehicles that have no registered device).
