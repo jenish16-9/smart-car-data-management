@@ -210,10 +210,23 @@ async def classify_simulated_audio(
         "location": location,
         "is_simulation": True,
         "model_version": result.model_version,
+        "model_name": result.model_name,
+        "processing_time_ms": result.processing_time_ms,
         "processing_timestamp": result.processing_timestamp,
         "created_at": timestamp,
     }
     await analysis_repository.insert_result(mongo, document)
+    alert_id = None
+    if alert_service.should_raise_alert(result.event_type, result.confidence):
+        alert = await alert_service.create_from_simulation(
+            session,
+            vehicle_id=device.vehicle.id,
+            event_id=event_id,
+            analysis=document,
+            location=location,
+        )
+        await session.commit()
+        alert_id = alert.id
     return SimulatedAudioEvent(
         eventId=event_id,
         vehicleId=device.vehicle.vehicle_code,
@@ -226,4 +239,5 @@ async def classify_simulated_audio(
         isSimulation=True,
         modelVersion=result.model_version,
         processingTimestamp=result.processing_timestamp,
+        alertId=alert_id,
     )

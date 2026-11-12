@@ -15,6 +15,8 @@ class Vehicle(Base):
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     vehicle_code: Mapped[str] = mapped_column(String(40), unique=True, index=True)
     vehicle_type: Mapped[str] = mapped_column(String(40))
+    vin: Mapped[str | None] = mapped_column(String(17), unique=True, index=True, nullable=True)
+    license_plate: Mapped[str | None] = mapped_column(String(20), unique=True, index=True, nullable=True)
     status: Mapped[str] = mapped_column(String(20), default="offline")
     owner_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     last_seen_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)

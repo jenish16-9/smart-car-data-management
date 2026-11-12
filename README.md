@@ -190,6 +190,11 @@ heartbeat history is append-only in MongoDB. Deleting a device is a soft removal
 hidden from its vehicle list while its PostgreSQL row and MongoDB history remain. Deleting a vehicle
 also detaches and retires its devices before the existing vehicle cleanup runs.
 
+Migration `0006_vehicle_identifiers_and_simulation_alerts` adds optional, unique VIN and license
+plate columns for backward compatibility with existing vehicles. The website requires both for new
+registrations; VINs are normalized to uppercase and validated as 17 characters excluding I, O, and
+Q. Because this changes shared PostgreSQL tables, the `neondb_owner` role must apply the migration.
+
 ```bash
 # Register a device under a vehicle (use an access token from /auth/login)
 curl -X POST http://localhost:8000/api/v1/vehicles/CAR-1024/devices \
@@ -211,7 +216,9 @@ active device to `ONLINE` (or `WARNING` for a health warning), but never reactiv
 The selected device in the Vehicles & IoT Devices page also has a **Simulate audio event** form.
 It uploads a PCM WAV (10 MB maximum) to the configured classifier and writes only the prediction
 metadata to MongoDB; the uploaded bytes are not retained. Every response is explicitly marked
-`isSimulation: true`, and disabled or retired devices reject the upload.
+`isSimulation: true`, and disabled or retired devices reject the upload. A non-normal simulated
+classification with confidence at least `0.80` creates an alert marked `is_simulation: true`; normal
+or lower-confidence results remain analysis events without an alert.
 
 ```bash
 curl -X POST http://localhost:8000/api/v1/devices/DEVICE_UUID/classify-audio \

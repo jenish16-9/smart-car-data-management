@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Float, ForeignKey, String, Text, Uuid
+from sqlalchemy import Boolean, Float, ForeignKey, String, Text, Uuid
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.postgres import Base, UTCDateTime
@@ -22,6 +22,8 @@ class Alert(Base):
     confidence: Mapped[float] = mapped_column(Float)
     status: Mapped[str] = mapped_column(String(20), default="open", index=True)
     location: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    is_simulation: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    simulation_event_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
     detected_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow, index=True)
     reviewed_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
     resolved_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)

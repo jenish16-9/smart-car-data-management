@@ -62,6 +62,8 @@ class AlertOut(BaseModel):
     confidence: float
     status: str
     location: str | None
+    is_simulation: bool
+    simulation_event_id: str | None
     detected_at: datetime
     reviewed_at: datetime | None
     resolved_at: datetime | None
@@ -78,6 +80,8 @@ class AlertOut(BaseModel):
             confidence=alert.confidence,
             status=alert.status,
             location=alert.location,
+            is_simulation=alert.is_simulation,
+            simulation_event_id=alert.simulation_event_id,
             detected_at=alert.detected_at,
             reviewed_at=alert.reviewed_at,
             resolved_at=alert.resolved_at,

@@ -32,6 +32,14 @@ async def test_register_list_and_get_device(client, admin_headers, vehicle):
     assert fetched.json()["hardware_id"] == DEVICE["hardware_id"]
 
 
+async def test_vehicle_audio_state_follows_registered_device_heartbeat(client, admin_headers, vehicle):
+    assert (await client.get("/vehicles/CAR-1024", headers=admin_headers)).json()["audio_device_state"] == "OFFLINE"
+    device = await register_device(client, admin_headers, vehicle)
+    assert (await client.get("/vehicles/CAR-1024", headers=admin_headers)).json()["audio_device_state"] == "PENDING"
+    await client.post(f"/devices/{device['id']}/heartbeat", json={"health": "HEALTHY"}, headers=admin_headers)
+    assert (await client.get("/vehicles/CAR-1024", headers=admin_headers)).json()["audio_device_state"] == "ONLINE"
+
+
 async def test_duplicate_hardware_and_invalid_association(client, admin_headers, vehicle):
     await register_device(client, admin_headers, vehicle)
     duplicate = await client.post(f"/vehicles/{vehicle['id']}/devices", json=DEVICE, headers=admin_headers)

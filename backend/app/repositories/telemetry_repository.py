@@ -58,7 +58,12 @@ async def insert_device_log(
 
 
 async def list_device_logs(db: AsyncIOMotorDatabase, vehicle_code: str, limit: int) -> list[dict[str, Any]]:
-    cursor = db[DEVICE_LOGS].find({"vehicle_id": vehicle_code}, {"_id": 0}).sort("timestamp", DESCENDING).limit(limit)
+    cursor = (
+        db[DEVICE_LOGS]
+        .find({"vehicle_id": vehicle_code}, {"_id": 0})
+        .sort([("timestamp", DESCENDING), ("_id", DESCENDING)])
+        .limit(limit)
+    )
     return [normalize(doc) async for doc in cursor]
 
 

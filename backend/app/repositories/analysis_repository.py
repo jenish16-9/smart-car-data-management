@@ -22,6 +22,11 @@ async def get_for_audio(db: AsyncIOMotorDatabase, audio_record_id: str) -> dict[
     return normalize(document) if document else None
 
 
+async def get_for_event(db: AsyncIOMotorDatabase, event_id: str) -> dict[str, Any] | None:
+    document = await db[AUDIO_ANALYSIS].find_one({"event_id": event_id}, {"_id": 0})
+    return normalize(document) if document else None
+
+
 async def get_for_audios(db: AsyncIOMotorDatabase, audio_record_ids: list[str]) -> dict[str, dict[str, Any]]:
     """Batch lookup (one query) keyed by audio_record_id."""
     if not audio_record_ids:

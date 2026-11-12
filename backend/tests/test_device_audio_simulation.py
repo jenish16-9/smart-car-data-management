@@ -60,11 +60,18 @@ async def test_device_audio_upload_classifies_and_preserves_simulation(
     assert event["location"] == "Parking garage"
     assert event["isSimulation"] is True
     assert event["modelVersion"] == "baseline-test-1"
+    assert event["alertId"] is not None
 
     stored = await mongo_db["audio_analysis_results"].find_one({"event_id": event["eventId"]})
     assert stored["device_id"] == device["id"]
     assert stored["predicted_class"] == "glass_breaking"
     assert stored["is_simulation"] is True
+
+    alert = (await client.get(f"/alerts/{event['alertId']}", headers=admin_headers)).json()
+    assert alert["is_simulation"] is True
+    assert alert["simulation_event_id"] == event["eventId"]
+    assert alert["audio_record_id"] is None
+    assert alert["analysis"]["model_version"] == "baseline-test-1"
 
 
 async def test_device_audio_upload_enforces_access_format_and_lifecycle(
@@ -121,3 +128,24 @@ async def test_device_audio_upload_reports_classifier_failure(client, admin_head
     )
     assert response.status_code == 422
     assert response.json()["detail"] == "Audio classification failed: model artifact unavailable"
+
+
+async def test_normal_simulation_does_not_raise_alert(client, admin_headers, vehicle, monkeypatch):
+    device = await register_device(client, admin_headers, vehicle, "AUDIO-SIM-4")
+    normal = AudioClassificationResult(
+        event_type="normal",
+        confidence=0.98,
+        model_version="baseline-test-1",
+        processing_timestamp=datetime.now(UTC),
+        model_name="test-classifier",
+        processing_time_ms=5,
+    )
+    monkeypatch.setattr(audio_classifier, "classify_audio", lambda _audio: normal)
+    response = await client.post(
+        f"/devices/{device['id']}/classify-audio",
+        files={"audio": ("normal.wav", wav_bytes(), "audio/wav")},
+        headers=admin_headers,
+    )
+    assert response.status_code == 200
+    assert response.json()["alertId"] is None
+    assert (await client.get("/alerts", headers=admin_headers)).json() == []

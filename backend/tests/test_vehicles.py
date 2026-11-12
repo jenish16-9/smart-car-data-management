@@ -1,10 +1,18 @@
 async def test_create_and_retrieve_vehicle(client, admin_headers):
     created = await client.post(
-        "/vehicles", json={"vehicle_code": "CAR-2000", "vehicle_type": "SUV"}, headers=admin_headers
+        "/vehicles",
+        json={
+            "vehicle_code": "CAR-2000",
+            "vehicle_type": "SUV",
+            "vin": "1HGCM82633A004352",
+            "license_plate": "8ABC123",
+        },
+        headers=admin_headers,
     )
     assert created.status_code == 201
     body = created.json()
     assert body["vehicle_code"] == "CAR-2000" and body["device"] is not None
+    assert body["vin"] == "1HGCM82633A004352" and body["license_plate"] == "8ABC123"
 
     by_code = await client.get("/vehicles/CAR-2000", headers=admin_headers)
     by_id = await client.get(f"/vehicles/{body['id']}", headers=admin_headers)
@@ -20,6 +28,33 @@ async def test_duplicate_vehicle_code_conflicts(client, admin_headers, vehicle):
         "/vehicles", json={"vehicle_code": "CAR-1024", "vehicle_type": "Sedan"}, headers=admin_headers
     )
     assert response.status_code == 409
+
+
+async def test_vehicle_identifier_validation_and_uniqueness(client, admin_headers, vehicle):
+    invalid = await client.post(
+        "/vehicles",
+        json={"vehicle_code": "CAR-BAD", "vehicle_type": "SUV", "vin": "NOT-A-VIN", "license_plate": "ABC"},
+        headers=admin_headers,
+    )
+    assert invalid.status_code == 422
+
+    first = await client.patch(
+        "/vehicles/CAR-1024",
+        json={"vin": "1HGCM82633A004352", "license_plate": "8ABC123"},
+        headers=admin_headers,
+    )
+    assert first.status_code == 200
+    duplicate = await client.post(
+        "/vehicles",
+        json={
+            "vehicle_code": "CAR-DUP",
+            "vehicle_type": "SUV",
+            "vin": "1hgcm82633a004352",
+            "license_plate": "different",
+        },
+        headers=admin_headers,
+    )
+    assert duplicate.status_code == 409
 
 
 async def test_unknown_vehicle_is_404(client, admin_headers):

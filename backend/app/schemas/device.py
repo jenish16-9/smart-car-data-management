@@ -110,3 +110,4 @@ class SimulatedAudioEvent(BaseModel):
     is_simulation: bool = Field(default=True, alias="isSimulation")
     model_version: str = Field(alias="modelVersion")
     processing_timestamp: datetime = Field(alias="processingTimestamp")
+    alert_id: UUID | None = Field(default=None, alias="alertId")
