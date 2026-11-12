@@ -272,15 +272,14 @@ async def list_heartbeats(
 
 
 async def create_device(session: AsyncSession, user: User, vehicle_ref: str, payload: DeviceCreate) -> DeviceOut:
-    """Vehicle-scoped registration used by the management UI; owners and admins may register."""
+    """Vehicle-scoped registration used by the management UI; administrators only."""
+    _require_admin(user)
     vehicle = await vehicle_service.get_accessible(session, user, vehicle_ref)
-    if user.role != "admin" and vehicle.owner_id != user.id:
-        raise ForbiddenError("Only the vehicle owner or an administrator can add devices")
     if await device_repository.get_by_hardware_id(session, payload.hardware_id):
         raise ConflictError("A device with this hardware ID already exists")
     configuration = {
         "captureEnabled": True,
-        "monitoringMode": "event",
+        "monitoringMode": "motion_triggered",
         "heartbeatIntervalSeconds": 30,
     }
     device = await device_repository.create(
@@ -313,9 +312,9 @@ async def update_configuration(
     device_id: str,
     payload: DeviceConfigurationUpdate,
 ) -> DeviceOut:
+    _require_admin(user)
     device, code = await get_accessible(session, user, device_id)
-    if device.status == "RETIRED":
-        raise ConflictError("Retired device configuration cannot be changed")
+    require_controllable(device)
     config = payload.configuration.model_dump(by_alias=True)
     device.configuration = config
     device.audio_capture_enabled = config["captureEnabled"]

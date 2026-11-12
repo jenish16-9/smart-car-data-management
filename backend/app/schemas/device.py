@@ -190,9 +190,7 @@ class DeviceConfiguration(BaseModel):
     model_config = ConfigDict(extra="allow", populate_by_name=True)
 
     capture_enabled: bool = Field(default=True, alias="captureEnabled")
-    monitoring_mode: Literal["event", "continuous", "motion_triggered", "paused"] = Field(
-        default="event", alias="monitoringMode"
-    )
+    monitoring_mode: MonitoringMode = Field(default="motion_triggered", alias="monitoringMode")
     heartbeat_interval_seconds: int = Field(default=30, ge=5, le=3600, alias="heartbeatIntervalSeconds")
 
 

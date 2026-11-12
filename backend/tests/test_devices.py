@@ -53,6 +53,21 @@ async def test_register_requires_authentication_and_admin(client, user_headers, 
     assert (await client.post("/devices", json=body, headers=user_headers)).status_code in (403, 404)
 
 
+async def test_vehicle_scoped_registration_is_admin_only(client, admin_headers, user_headers):
+    owned = await client.post(
+        "/vehicles", json={"vehicle_code": "CAR-OWNER", "vehicle_type": "Sedan"}, headers=user_headers
+    )
+    assert owned.status_code == 201
+    body = {"hardware_id": "NESTED-0001", "device_type": "microphone"}
+    endpoint = f"/vehicles/{owned.json()['id']}/devices"
+    assert (await client.post(endpoint, json=body)).status_code == 401
+    denied = await client.post(endpoint, json=body, headers=user_headers)
+    assert denied.status_code == 403
+    created = await client.post(endpoint, json=body, headers=admin_headers)
+    assert created.status_code == 201
+    assert created.json()["configuration"]["monitoringMode"] == "motion_triggered"
+
+
 # --- multiple devices per vehicle, listing, filters ---------------------------------------------------------------
 async def test_vehicle_supports_multiple_devices_and_filters(client, admin_headers, vehicle):
     await register(client, admin_headers, "MIC-0001")
@@ -178,6 +193,47 @@ async def test_soft_removal_retires_device_and_keeps_history(client, admin_heade
 
 
 # --- device-level controls ----------------------------------------------------------------------------------------
+async def test_configuration_requires_admin_and_valid_supported_mode(client, admin_headers, user_headers):
+    regular_user = (await client.get("/users/me", headers=user_headers)).json()
+    vehicle_response = await client.post(
+        "/vehicles",
+        json={"vehicle_code": "CAR-CONFIG", "vehicle_type": "Sedan", "assigned_user_ids": [regular_user["id"]]},
+        headers=admin_headers,
+    )
+    assert vehicle_response.status_code == 201
+    registered = await register(client, admin_headers, "MIC-CONFIG", "CAR-CONFIG")
+    assert registered.status_code == 201
+    endpoint = f"/devices/{registered.json()['id']}/configuration"
+    config = {
+        "configuration": {
+            "captureEnabled": True,
+            "monitoringMode": "motion_triggered",
+            "heartbeatIntervalSeconds": 60,
+        }
+    }
+    # The user can read this assigned vehicle/device but still cannot change device configuration.
+    assert (await client.get(endpoint.removesuffix("/configuration"), headers=user_headers)).status_code == 200
+    assert (await client.put(endpoint, json=config, headers=user_headers)).status_code == 403
+    updated = await client.put(endpoint, json=config, headers=admin_headers)
+    assert updated.status_code == 200
+    assert updated.json()["configuration"] == config["configuration"]
+
+    config["configuration"]["monitoringMode"] = "event"
+    assert (await client.put(endpoint, json=config, headers=admin_headers)).status_code == 422
+
+
+async def test_configuration_rejects_disabled_and_retired_devices(client, admin_headers, device):
+    endpoint = f"/devices/{device['id']}/configuration"
+    config = {"configuration": {"monitoringMode": "continuous"}}
+    await client.patch(f"/devices/{device['id']}", json={"status": "DISABLED"}, headers=admin_headers)
+    disabled = await client.put(endpoint, json=config, headers=admin_headers)
+    assert disabled.status_code == 409 and "disabled" in disabled.json()["detail"].lower()
+
+    await client.delete(f"/devices/{device['id']}", headers=admin_headers)
+    retired = await client.put(endpoint, json=config, headers=admin_headers)
+    assert retired.status_code == 409 and "retired" in retired.json()["detail"].lower()
+
+
 async def test_device_level_controls_are_independent_per_device(client, admin_headers, vehicle):
     first = (await register(client, admin_headers, "MIC-AAAA")).json()
     second = (await register(client, admin_headers, "MIC-BBBB")).json()
